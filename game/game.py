@@ -133,6 +133,32 @@ class Game:
                 return player
         return None
 
+    def move_player(self, player_id: str, direction: str) -> dict:
+        """Move a player up or down in the order (lobby only)"""
+        if self.state != GameState.WAITING:
+            return {'success': False, 'error': 'Can only reorder in lobby'}
+        
+        idx = next((i for i, p in enumerate(self.players) if p.id == player_id), None)
+        if idx is None:
+            return {'success': False, 'error': 'Player not found'}
+        
+        if direction == 'up' and idx > 0:
+            self.players[idx], self.players[idx - 1] = self.players[idx - 1], self.players[idx]
+        elif direction == 'down' and idx < len(self.players) - 1:
+            self.players[idx], self.players[idx + 1] = self.players[idx + 1], self.players[idx]
+        else:
+            return {'success': False, 'error': 'Cannot move further'}
+        
+        return {'success': True}
+
+    def shuffle_players(self) -> dict:
+        """Shuffle player order randomly (lobby only)"""
+        if self.state != GameState.WAITING:
+            return {'success': False, 'error': 'Can only shuffle in lobby'}
+        
+        random.shuffle(self.players)
+        return {'success': True}
+
     def is_host(self, player_id: str) -> bool:
         """Check if a player is the host (first non-bot player)"""
         for player in self.players:
@@ -274,8 +300,13 @@ class Game:
         players_info = [p.get_public_info() for p in self.players]
         alive_count = len(self.get_alive_players())
         
+        # During Palo Fijo, bots with >1 die can't see their dice (play blind)
+        bot_dice = current.dice
+        if self.is_palo_fijo and current.dice_count > 1:
+            bot_dice = []  # Bot plays blind
+        
         decision = bot_ai.decide_action(
-            my_dice=current.dice,
+            my_dice=bot_dice,
             total_dice=self.get_total_dice_count(),
             current_bet=self.current_bet,
             players_info=players_info,
@@ -626,6 +657,27 @@ class Game:
         self.action_log = []
         self.round_bet_history = []
 
+    def _are_dice_hidden(self, player: Optional[Player]) -> bool:
+        """Check if a player's dice should be hidden (Palo Fijo rule)"""
+        if not player or not player.is_alive():
+            return False
+        if not self.is_palo_fijo:
+            return False
+        if self.state not in [GameState.BETTING, GameState.ROLLING]:
+            return False
+        # During Palo Fijo: only the triggering player and players with 1 die can see
+        if player.dice_count == 1:
+            return False
+        return True
+
+    def _get_visible_dice(self, player: Optional[Player]) -> list:
+        """Get dice visible to this player (hidden during Palo Fijo for players with >1 die)"""
+        if not player:
+            return []
+        if self._are_dice_hidden(player):
+            return []  # Empty list signals hidden
+        return player.dice
+
     def get_state_for_player(self, player_id: str) -> dict:
         """Get game state for a specific player"""
         player = self.get_player(player_id)
@@ -641,8 +693,9 @@ class Game:
             'isMyTurn': current_player and current_player.id == player_id,
             'currentBet': self.current_bet,
             'totalDice': self.get_total_dice_count(),
-            'myDice': player.dice if player else [],
+            'myDice': self._get_visible_dice(player),
             'myDiceCount': player.dice_count if player else 0,
+            'diceHidden': self._are_dice_hidden(player),
             'lastAction': self.last_action,
             'revealedDice': self.revealed_dice,
             'winner': winner.get_public_info() if winner else None,

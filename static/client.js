@@ -13,6 +13,7 @@ let selectedEmoji = '😀';
 let probabilityData = null;
 let currentProbTab = 'unknown';
 let selectedPaintDice = [];
+let sidebarMinimized = false;
 
 // DOM Elements
 const screens = {
@@ -35,6 +36,7 @@ const elements = {
   hostControls: document.getElementById('hostControls'),
   startGameBtn: document.getElementById('startGameBtn'),
   addBotBtn: document.getElementById('addBotBtn'),
+  shuffleBtn: document.getElementById('shuffleBtn'),
   waitingMessage: document.getElementById('waitingMessage'),
   
   // Game screen
@@ -43,9 +45,6 @@ const elements = {
   playersDisplay: document.getElementById('playersDisplay'),
   currentBetValue: document.getElementById('currentBetValue'),
   currentBettor: document.getElementById('currentBettor'),
-  betProbability: document.getElementById('betProbability'),
-  probUnknown: document.getElementById('probUnknown'),
-  probKnown: document.getElementById('probKnown'),
   turnIndicator: document.getElementById('turnIndicator'),
   turnText: document.getElementById('turnText'),
   myDice: document.getElementById('myDice'),
@@ -72,13 +71,27 @@ const elements = {
   paloFijoPlayer: document.getElementById('paloFijoPlayer'),
   paloFijoValueDisplay: document.getElementById('paloFijoValueDisplay'),
   
+  // Sidebar log
+  logSidebar: document.getElementById('logSidebar'),
+  minimizeLogBtn: document.getElementById('minimizeLogBtn'),
+  expandLogBtn: document.getElementById('expandLogBtn'),
+  sidebarLogContent: document.getElementById('sidebarLogContent'),
+  
+  // Chat sidebar
+  chatSidebar: document.getElementById('chatSidebar'),
+  minimizeChatBtn: document.getElementById('minimizeChatBtn'),
+  expandChatBtn: document.getElementById('expandChatBtn'),
+  chatMessages: document.getElementById('chatMessages'),
+  chatInput: document.getElementById('chatInput'),
+  chatSendBtn: document.getElementById('chatSendBtn'),
+  
   // Probability modal
   probModal: document.getElementById('probModal'),
   closeProbModal: document.getElementById('closeProbModal'),
   probDescription: document.getElementById('probDescription'),
   probTableBody: document.getElementById('probTableBody'),
   
-  // Log modal
+  // Log modal (mobile)
   logModal: document.getElementById('logModal'),
   closeLogModal: document.getElementById('closeLogModal'),
   logContent: document.getElementById('logContent'),
@@ -156,6 +169,34 @@ function updateLobby(state) {
       li.classList.add('bot');
     }
     
+    // Reorder buttons (host only)
+    if (state.isHost) {
+      const reorderDiv = document.createElement('div');
+      reorderDiv.className = 'reorder-btns';
+      
+      const upBtn = document.createElement('button');
+      upBtn.className = 'reorder-btn';
+      upBtn.textContent = '▲';
+      upBtn.title = 'Move up';
+      upBtn.onclick = () => movePlayer(player.id, 'up');
+      
+      const downBtn = document.createElement('button');
+      downBtn.className = 'reorder-btn';
+      downBtn.textContent = '▼';
+      downBtn.title = 'Move down';
+      downBtn.onclick = () => movePlayer(player.id, 'down');
+      
+      reorderDiv.appendChild(upBtn);
+      reorderDiv.appendChild(downBtn);
+      li.appendChild(reorderDiv);
+    }
+    
+    // Order number
+    const orderNum = document.createElement('span');
+    orderNum.className = 'player-order-num';
+    orderNum.textContent = `${index + 1}.`;
+    li.appendChild(orderNum);
+    
     // Player info span
     const playerInfo = document.createElement('span');
     playerInfo.className = 'player-info';
@@ -231,13 +272,9 @@ function updateGameScreen(state) {
   if (state.currentBet) {
     elements.currentBetValue.textContent = `${state.currentBet.count} × ${state.currentBet.value}s`;
     elements.currentBettor.textContent = `by ${state.currentBet.playerName}`;
-    
-    // Show probability for current bet
-    updateBetProbability(state);
   } else {
     elements.currentBetValue.textContent = 'None';
     elements.currentBettor.textContent = 'First bet of the round';
-    elements.betProbability.classList.add('hidden');
   }
   
   // Update turn indicator
@@ -256,7 +293,7 @@ function updateGameScreen(state) {
   }
   
   // Update my dice
-  updateMyDice(state.myDice);
+  updateMyDice(state.myDice, state.diceHidden, state.myDiceCount);
   
   // Show/hide action area
   if (state.state === 'betting') {
@@ -294,6 +331,14 @@ function updateGameScreen(state) {
     
     updateResolutionDisplay(state);
   }
+  
+  // Update sidebar log
+  updateSidebarLog(state);
+  
+  // Auto-refresh probability chart if open
+  if (!elements.probModal.classList.contains('hidden')) {
+    refreshProbabilityChart();
+  }
 }
 
 function updateDiceSelectorForPaloFijo(lockedValue) {
@@ -309,6 +354,10 @@ function updateDiceSelectorForPaloFijo(lockedValue) {
         btn.classList.add('locked');
         btn.style.opacity = '0.3';
       }
+    } else {
+      // Palo Fijo but no value yet - unlock all for first bet
+      btn.classList.remove('locked');
+      btn.style.opacity = '1';
     }
   });
 }
@@ -427,8 +476,31 @@ function updatePlayersDisplay(state) {
   });
 }
 
-function updateMyDice(dice) {
+function updateMyDice(dice, diceHidden, diceCount) {
   elements.myDice.innerHTML = '';
+  
+  // Palo Fijo - dice hidden for players with >1 die
+  if (diceHidden) {
+    const hiddenMsg = document.createElement('div');
+    hiddenMsg.className = 'dice-hidden-message';
+    hiddenMsg.textContent = '🔒 Your dice are hidden during Palo Fijo';
+    elements.myDice.appendChild(hiddenMsg);
+    
+    // Show face-down dice placeholders
+    const container = document.createElement('div');
+    container.className = 'dice-container';
+    for (let i = 0; i < (diceCount || 0); i++) {
+      const die = document.createElement('div');
+      die.className = 'die die-hidden';
+      const question = document.createElement('span');
+      question.className = 'die-hidden-mark';
+      question.textContent = '?';
+      die.appendChild(question);
+      container.appendChild(die);
+    }
+    elements.myDice.appendChild(container);
+    return;
+  }
   
   if (!dice || dice.length === 0) {
     const noDice = document.createElement('div');
@@ -441,18 +513,6 @@ function updateMyDice(dice) {
   dice.forEach(value => {
     const die = createDieElement(value, { isWild: value === 1 });
     elements.myDice.appendChild(die);
-  });
-}
-
-function updateBetProbability(state) {
-  if (!state.currentBet || !state.myDice) {
-    elements.betProbability.classList.add('hidden');
-    return;
-  }
-  
-  socket.emit('getProbabilities', {
-    count: state.currentBet.count,
-    value: state.currentBet.value
   });
 }
 
@@ -553,14 +613,34 @@ function updateGameOver(state) {
 }
 
 // ============================================
-// Action Log
+// Sidebar Action Log
 // ============================================
 
-function openActionLog() {
-  if (!gameState || !gameState.actionLog) return;
+function updateSidebarLog(state) {
+  if (!state || !state.actionLog) return;
   
-  const log = gameState.actionLog;
+  const log = state.actionLog;
+  const html = renderLogHTML(log);
   
+  elements.sidebarLogContent.innerHTML = html || '<p style="color: #6b7280; font-size: 0.75rem;">No actions yet</p>';
+  
+  // Auto-scroll to bottom
+  elements.sidebarLogContent.scrollTop = elements.sidebarLogContent.scrollHeight;
+}
+
+function toggleSidebar() {
+  sidebarMinimized = !sidebarMinimized;
+  
+  if (sidebarMinimized) {
+    elements.logSidebar.classList.add('minimized');
+    elements.expandLogBtn.classList.add('visible');
+  } else {
+    elements.logSidebar.classList.remove('minimized');
+    elements.expandLogBtn.classList.remove('visible');
+  }
+}
+
+function renderLogHTML(log) {
   // Group by round
   const byRound = {};
   log.forEach(entry => {
@@ -603,11 +683,18 @@ function openActionLog() {
     html += '</div>';
   });
   
-  if (!html) {
-    html = '<p style="color: #6b7280;">No actions yet</p>';
-  }
+  return html;
+}
+
+// ============================================
+// Action Log Modal (mobile)
+// ============================================
+
+function openActionLog() {
+  if (!gameState || !gameState.actionLog) return;
   
-  elements.logContent.innerHTML = html;
+  const html = renderLogHTML(gameState.actionLog);
+  elements.logContent.innerHTML = html || '<p style="color: #6b7280;">No actions yet</p>';
   elements.logModal.classList.remove('hidden');
 }
 
@@ -619,10 +706,31 @@ function closeActionLog() {
 // Probability Chart
 // ============================================
 
+function getOtherPlayersPaintedDice() {
+  // Only include painted dice from OTHER players (not our own)
+  // to avoid double-counting since our own dice are already in myDice
+  if (!gameState || !gameState.players) return [];
+  
+  let otherPainted = [];
+  gameState.players.forEach(player => {
+    if (player.id !== myPlayerId && player.paintedDice && player.paintedDice.length > 0) {
+      otherPainted = otherPainted.concat(player.paintedDice);
+    }
+  });
+  return otherPainted;
+}
+
 function openProbabilityChart() {
   if (!gameState) return;
+  refreshProbabilityChart();
+  elements.probModal.classList.remove('hidden');
+}
+
+function refreshProbabilityChart() {
+  if (!gameState) return;
   
-  const paintedStr = (gameState.allPaintedDice || []).join(',');
+  const otherPainted = getOtherPlayersPaintedDice();
+  const paintedStr = otherPainted.join(',');
   const url = `/api/probability?total_dice=${gameState.totalDice}&my_dice=${(gameState.myDice || []).join(',')}&painted_dice=${paintedStr}`;
   
   fetch(url)
@@ -630,11 +738,9 @@ function openProbabilityChart() {
     .then(data => {
       probabilityData = data;
       renderProbabilityTable();
-      elements.probModal.classList.remove('hidden');
     })
     .catch(err => {
       console.error('Failed to load probability data:', err);
-      showError('Failed to load probability chart');
     });
 }
 
@@ -650,9 +756,15 @@ function renderProbabilityTable() {
     : probabilityData.unknown;
   
   if (currentProbTab === 'known') {
-    const knownDice = (gameState.myDice || []).concat(gameState.allPaintedDice || []);
-    elements.probDescription.textContent = 
-      `Probability knowing dice: ${knownDice.join(', ') || 'none'}`;
+    const otherPainted = getOtherPlayersPaintedDice();
+    const knownDice = (gameState.myDice || []).concat(otherPainted);
+    if (gameState.diceHidden) {
+      elements.probDescription.textContent = 
+        `🔒 Your dice are hidden (Palo Fijo). Known: painted dice only ${otherPainted.join(', ') || 'none'}`;
+    } else {
+      elements.probDescription.textContent = 
+        `Probability knowing dice: ${knownDice.join(', ') || 'none'}`;
+    }
   } else {
     elements.probDescription.textContent = 
       'Probability that a bet is true (without knowing any dice)';
@@ -740,14 +852,6 @@ socket.on('error', (data) => {
   showError(data.message);
 });
 
-socket.on('probabilities', (data) => {
-  if (data && elements.betProbability) {
-    elements.probUnknown.textContent = `Others: ${data.unknown.at_least}%`;
-    elements.probKnown.textContent = `You: ${data.known.at_least}%`;
-    elements.betProbability.classList.remove('hidden');
-  }
-});
-
 socket.on('playerJoined', (data) => {
   console.log(`${data.player.name} joined`);
 });
@@ -787,6 +891,10 @@ socket.on('gameReset', () => {
   showScreen('lobby');
 });
 
+socket.on('chatMessage', (message) => {
+  appendChatMessage(message);
+});
+
 // ============================================
 // User Actions
 // ============================================
@@ -816,6 +924,14 @@ function addBot() {
 
 function removeBot(botId) {
   socket.emit('removeBot', { botId });
+}
+
+function movePlayer(playerId, direction) {
+  socket.emit('movePlayer', { playerId, direction });
+}
+
+function shufflePlayers() {
+  socket.emit('shufflePlayers');
 }
 
 function placeBet() {
@@ -910,6 +1026,7 @@ document.querySelectorAll('.emoji-btn').forEach(btn => {
 
 elements.startGameBtn.addEventListener('click', startGame);
 elements.addBotBtn.addEventListener('click', addBot);
+elements.shuffleBtn.addEventListener('click', shufflePlayers);
 elements.placeBetBtn.addEventListener('click', placeBet);
 elements.doubtBtn.addEventListener('click', callDoubt);
 elements.calzoBtn.addEventListener('click', callCalzo);
@@ -917,6 +1034,8 @@ elements.nextRoundBtn.addEventListener('click', nextRound);
 elements.probChartBtn.addEventListener('click', openProbabilityChart);
 elements.stopGameBtn.addEventListener('click', stopGame);
 elements.logBtn.addEventListener('click', openActionLog);
+elements.minimizeLogBtn.addEventListener('click', toggleSidebar);
+elements.expandLogBtn.addEventListener('click', toggleSidebar);
 
 elements.closeProbModal.addEventListener('click', closeProbabilityChart);
 elements.probModal.addEventListener('click', (e) => {
@@ -945,6 +1064,73 @@ elements.betCount.addEventListener('input', () => {
   } else if (gameState && value > gameState.totalDice) {
     elements.betCount.value = gameState.totalDice;
   }
+});
+
+// ============================================
+// Chat
+// ============================================
+
+let chatMinimized = false;
+
+function toggleChat() {
+  chatMinimized = !chatMinimized;
+  
+  if (chatMinimized) {
+    elements.chatSidebar.classList.add('minimized');
+    elements.expandChatBtn.classList.add('visible');
+  } else {
+    elements.chatSidebar.classList.remove('minimized');
+    elements.expandChatBtn.classList.remove('visible');
+  }
+}
+
+function sendChatMessage() {
+  const text = elements.chatInput.value.trim();
+  if (!text) return;
+  
+  socket.emit('chatMessage', { text });
+  elements.chatInput.value = '';
+}
+
+function sendQuickEmoji(emoji) {
+  socket.emit('chatMessage', { text: emoji });
+}
+
+function appendChatMessage(message) {
+  const div = document.createElement('div');
+  div.className = 'chat-message';
+  
+  // Check if emoji-only message (single emoji or just emojis)
+  const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(message.text) && message.text.length <= 4;
+  if (isEmojiOnly) {
+    div.classList.add('emoji-only');
+  }
+  
+  div.innerHTML = `
+    <div class="chat-sender">${message.emoji || '🎲'} ${message.sender}</div>
+    <div class="chat-text">${escapeHtml(message.text)}</div>
+  `;
+  
+  elements.chatMessages.appendChild(div);
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Chat event listeners
+elements.minimizeChatBtn.addEventListener('click', toggleChat);
+elements.expandChatBtn.addEventListener('click', toggleChat);
+elements.chatSendBtn.addEventListener('click', sendChatMessage);
+elements.chatInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') sendChatMessage();
+});
+
+document.querySelectorAll('.chat-emoji-btn').forEach(btn => {
+  btn.addEventListener('click', () => sendQuickEmoji(btn.dataset.emoji));
 });
 
 // Initialize

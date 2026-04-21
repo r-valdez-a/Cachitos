@@ -58,9 +58,10 @@
       <div id="hostControls" class="hidden">
         <div class="bot-controls">
           <button id="addBotBtn" class="btn btn-secondary">🤖 Add Bot</button>
+          <button id="shuffleBtn" class="btn btn-secondary">🔀 Shuffle</button>
         </div>
         <button id="startGameBtn" class="btn btn-success">Start Game</button>
-        <p class="hint">Need at least 2 players to start</p>
+        <p class="hint">Need at least 2 players to start. Drag ▲▼ to reorder.</p>
       </div>
       
       <div id="waitingMessage" class="waiting-message">
@@ -68,106 +69,145 @@
       </div>
     </div>
 
-    <!-- Game Screen -->
+    <!-- Game Screen (with sidebar layout) -->
     <div id="gameScreen" class="screen hidden">
-      <!-- Game Header -->
-      <div class="game-header">
-        <div class="round-info">Round <span id="roundNumber">1</span></div>
-        <div class="header-buttons">
-          <button id="logBtn" class="btn btn-small btn-secondary">📜 Log</button>
-          <button id="probChartBtn" class="btn btn-small btn-info">📊 Odds</button>
-          <button id="stopGameBtn" class="btn btn-small btn-danger hidden">⏹ Stop</button>
+      <div class="game-layout">
+        <!-- Left Sidebar: Action Log -->
+        <div id="logSidebar" class="log-sidebar">
+          <div class="sidebar-header">
+            <h3>📜 Action Log</h3>
+            <button id="minimizeLogBtn" class="btn-minimize" title="Minimize">◀</button>
+          </div>
+          <div id="sidebarLogContent" class="sidebar-log-content"></div>
         </div>
-        <div class="dice-info">Total: <span id="totalDice">0</span></div>
-      </div>
 
-      <!-- Palo Fijo Banner -->
-      <div id="paloFijoBanner" class="palo-fijo-banner hidden">
-        🔒 PALO FIJO - <span id="paloFijoPlayer"></span> locked to <span id="paloFijoValueDisplay"></span>
-        <span class="palo-fijo-note">(1s are NOT wild)</span>
-      </div>
+        <!-- Expand sidebar button (shown when minimized) -->
+        <button id="expandLogBtn" class="btn-expand-sidebar" title="Show Log">▶</button>
 
-      <!-- Players Display -->
-      <div class="players-bar">
-        <div id="playersDisplay"></div>
-      </div>
+        <!-- Main Game Area -->
+        <div class="game-main">
+          <!-- Game Header -->
+          <div class="game-header">
+            <div class="round-info">Round <span id="roundNumber">1</span></div>
+            <div class="header-buttons">
+              <button id="logBtn" class="btn btn-small btn-secondary hidden-desktop">📜 Log</button>
+              <button id="probChartBtn" class="btn btn-small btn-info">📊 Odds</button>
+              <button id="stopGameBtn" class="btn btn-small btn-danger hidden">⏹ Stop</button>
+            </div>
+            <div class="dice-info">Total: <span id="totalDice">0</span></div>
+          </div>
 
-      <!-- Current Bet Display -->
-      <div id="currentBetDisplay" class="current-bet">
-        <span class="bet-label">Current Bet:</span>
-        <span id="currentBetValue" class="bet-value">None</span>
-        <span id="currentBettor" class="bet-by"></span>
-        <div id="betProbability" class="bet-probability hidden">
-          <span class="prob-label">Probability:</span>
-          <span id="probUnknown" class="prob-value"></span>
-          <span id="probKnown" class="prob-value known"></span>
-        </div>
-      </div>
+          <!-- Palo Fijo Banner -->
+          <div id="paloFijoBanner" class="palo-fijo-banner hidden">
+            🔒 PALO FIJO - <span id="paloFijoPlayer"></span> locked to <span id="paloFijoValueDisplay"></span>
+            <span class="palo-fijo-note">1s are NOT wild · Dice hidden for players with &gt;1 die</span>
+          </div>
 
-      <!-- Turn Indicator -->
-      <div id="turnIndicator" class="turn-indicator">
-        <span id="turnText"></span>
-      </div>
+          <!-- Players Display -->
+          <div class="players-bar">
+            <div id="playersDisplay"></div>
+          </div>
 
-      <!-- My Dice -->
-      <div class="my-dice-section">
-        <h3>Your Dice</h3>
-        <div id="myDice" class="dice-container"></div>
-      </div>
+          <!-- Current Bet Display -->
+          <div id="currentBetDisplay" class="current-bet">
+            <span class="bet-label">Current Bet:</span>
+            <span id="currentBetValue" class="bet-value">None</span>
+            <span id="currentBettor" class="bet-by"></span>
+          </div>
 
-      <!-- Action Area (only shown on your turn) -->
-      <div id="actionArea" class="action-area hidden">
-        <!-- Bet Controls -->
-        <div class="bet-controls">
-          <div class="bet-inputs">
-            <div class="input-group">
-              <label for="betCount">Count</label>
-              <div class="number-input">
-                <button type="button" class="btn-adjust" onclick="adjustBetCount(-1)">-</button>
-                <input type="number" id="betCount" min="1" value="1">
-                <button type="button" class="btn-adjust" onclick="adjustBetCount(1)">+</button>
+          <!-- Turn Indicator -->
+          <div id="turnIndicator" class="turn-indicator">
+            <span id="turnText"></span>
+          </div>
+
+          <!-- My Dice -->
+          <div class="my-dice-section">
+            <h3>Your Dice</h3>
+            <div id="myDice" class="dice-container"></div>
+          </div>
+
+          <!-- Action Area (only shown on your turn) -->
+          <div id="actionArea" class="action-area hidden">
+            <!-- Bet Controls -->
+            <div class="bet-controls">
+              <div class="bet-inputs">
+                <div class="input-group">
+                  <label for="betCount">Count</label>
+                  <div class="number-input">
+                    <button type="button" class="btn-adjust" onclick="adjustBetCount(-1)">-</button>
+                    <input type="number" id="betCount" min="1" value="1">
+                    <button type="button" class="btn-adjust" onclick="adjustBetCount(1)">+</button>
+                  </div>
+                </div>
+                <div class="input-group" id="valueInputGroup">
+                  <label for="betValue">Value</label>
+                  <div class="dice-selector" id="diceSelector">
+                    <button type="button" class="dice-btn" data-value="1">1</button>
+                    <button type="button" class="dice-btn" data-value="2">2</button>
+                    <button type="button" class="dice-btn" data-value="3">3</button>
+                    <button type="button" class="dice-btn" data-value="4">4</button>
+                    <button type="button" class="dice-btn" data-value="5">5</button>
+                    <button type="button" class="dice-btn selected" data-value="6">6</button>
+                  </div>
+                  <input type="hidden" id="betValue" value="6">
+                </div>
+              </div>
+              
+              <!-- Paint Controls -->
+              <div id="paintControls" class="paint-controls hidden">
+                <label>🎨 Paint dice to reveal:</label>
+                <div id="paintDiceSelector" class="paint-dice-selector"></div>
               </div>
             </div>
-            <div class="input-group" id="valueInputGroup">
-              <label for="betValue">Value</label>
-              <div class="dice-selector" id="diceSelector">
-                <button type="button" class="dice-btn" data-value="1">1</button>
-                <button type="button" class="dice-btn" data-value="2">2</button>
-                <button type="button" class="dice-btn" data-value="3">3</button>
-                <button type="button" class="dice-btn" data-value="4">4</button>
-                <button type="button" class="dice-btn" data-value="5">5</button>
-                <button type="button" class="dice-btn selected" data-value="6">6</button>
-              </div>
-              <input type="hidden" id="betValue" value="6">
+
+            <!-- Action Buttons (all aligned together) -->
+            <div class="action-buttons">
+              <button id="placeBetBtn" class="btn btn-primary">Place Bet</button>
+              <button id="doubtBtn" class="btn btn-danger" disabled>🤔 Doubt (Dudo)</button>
+              <button id="calzoBtn" class="btn btn-warning" disabled>🎯 Calzo (Exact)</button>
             </div>
           </div>
-          
-          <!-- Paint Controls -->
-          <div id="paintControls" class="paint-controls hidden">
-            <label>🎨 Paint dice to reveal:</label>
-            <div id="paintDiceSelector" class="paint-dice-selector"></div>
+
+          <!-- Waiting Message (when not your turn) -->
+          <div id="waitingTurn" class="waiting-turn">
+            Waiting for <span id="waitingForPlayer"></span> to play...
           </div>
-          
-          <button id="placeBetBtn" class="btn btn-primary">Place Bet</button>
+
+          <!-- Resolution Display -->
+          <div id="resolutionDisplay" class="resolution-display hidden">
+            <div id="resolutionContent"></div>
+            <div id="allDiceReveal" class="all-dice-reveal"></div>
+            <button id="nextRoundBtn" class="btn btn-primary">Next Round</button>
+          </div>
         </div>
 
-        <!-- Challenge Buttons -->
-        <div class="challenge-controls">
-          <button id="doubtBtn" class="btn btn-danger" disabled>🤔 Doubt (Dudo)</button>
-          <button id="calzoBtn" class="btn btn-warning" disabled>🎯 Calzo (Exact)</button>
+        <!-- Expand chat button (shown when minimized) -->
+        <button id="expandChatBtn" class="btn-expand-chat" title="Show Chat">◀</button>
+
+        <!-- Right Sidebar: Chat -->
+        <div id="chatSidebar" class="chat-sidebar">
+          <div class="sidebar-header">
+            <h3>💬 Chat</h3>
+            <button id="minimizeChatBtn" class="btn-minimize" title="Minimize">▶</button>
+          </div>
+          <div id="chatMessages" class="chat-messages"></div>
+          <div class="chat-input-area">
+            <div class="chat-quick-emojis">
+              <button type="button" class="chat-emoji-btn" data-emoji="😂">😂</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="👍">👍</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="🎲">🎲</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="🔥">🔥</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="💀">💀</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="🤔">🤔</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="🎯">🎯</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="😱">😱</button>
+            </div>
+            <div class="chat-input-row">
+              <input type="text" id="chatInput" placeholder="Type..." maxlength="100" autocomplete="off">
+              <button id="chatSendBtn">Send</button>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <!-- Waiting Message (when not your turn) -->
-      <div id="waitingTurn" class="waiting-turn">
-        Waiting for <span id="waitingForPlayer"></span> to play...
-      </div>
-
-      <!-- Resolution Display -->
-      <div id="resolutionDisplay" class="resolution-display hidden">
-        <div id="resolutionContent"></div>
-        <div id="allDiceReveal" class="all-dice-reveal"></div>
-        <button id="nextRoundBtn" class="btn btn-primary">Next Round</button>
       </div>
     </div>
 
@@ -219,7 +259,7 @@
       </div>
     </div>
 
-    <!-- Action Log Modal -->
+    <!-- Action Log Modal (mobile fallback) -->
     <div id="logModal" class="modal hidden">
       <div class="modal-content modal-log">
         <div class="modal-header">

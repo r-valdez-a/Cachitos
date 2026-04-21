@@ -68,13 +68,20 @@ class Player:
 
     def paint_dice(self, dice_indices: list) -> bool:
         """
-        Paint (reveal) selected dice
-        Returns True if successful, False if already painted this round
+        Paint (reveal) selected dice.
+        Non-painted dice are rerolled.
+        Returns True if successful, False if already painted this round.
         """
         if self.has_painted_this_round:
             return False
         self.painted_dice = dice_indices
         self.has_painted_this_round = True
+        
+        # Reroll all non-painted dice
+        for i in range(len(self.dice)):
+            if i not in dice_indices:
+                self.dice[i] = random.randint(1, 6)
+        
         return True
 
     def get_painted_dice_values(self) -> list:

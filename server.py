@@ -249,6 +249,37 @@ def handle_remove_bot(data):
         emit('error', {'message': result['error']})
 
 
+@socketio.on('movePlayer')
+def handle_move_player(data):
+    """Handle host reordering a player"""
+    if not game.is_host(request.sid):
+        emit('error', {'message': 'Only the host can reorder players'})
+        return
+    
+    player_id = data.get('playerId', '')
+    direction = data.get('direction', '')
+    
+    result = game.move_player(player_id, direction)
+    if result['success']:
+        broadcast_game_state_to_all()
+    else:
+        emit('error', {'message': result['error']})
+
+
+@socketio.on('shufflePlayers')
+def handle_shuffle_players():
+    """Handle host shuffling player order"""
+    if not game.is_host(request.sid):
+        emit('error', {'message': 'Only the host can shuffle players'})
+        return
+    
+    result = game.shuffle_players()
+    if result['success']:
+        broadcast_game_state_to_all()
+    else:
+        emit('error', {'message': result['error']})
+
+
 @socketio.on('startGame')
 def handle_start_game():
     """Handle host starting the game"""
@@ -359,6 +390,35 @@ def handle_reset_game():
         emit('error', {'message': 'Only the host can reset the game'})
 
 
+@socketio.on('chatMessage')
+def handle_chat_message(data):
+    """Handle chat message from a player"""
+    text = data.get('text', '').strip()
+    if not text or len(text) > 100:
+        return
+    
+    player = game.get_player(request.sid)
+    if not player:
+        return
+    
+    message = {
+        'sender': player.name,
+        'emoji': player.emoji,
+        'text': text,
+        'timestamp': time.time()
+    }
+    
+    # Store in chat history (keep last 50)
+    if not hasattr(game, 'chat_messages'):
+        game.chat_messages = []
+    game.chat_messages.append(message)
+    if len(game.chat_messages) > 50:
+        game.chat_messages = game.chat_messages[-50:]
+    
+    # Broadcast to all connected players
+    socketio.emit('chatMessage', message)
+
+
 @socketio.on('requestState')
 def handle_request_state():
     """Handle state request"""
@@ -372,7 +432,12 @@ def handle_get_probabilities(data):
     bet_value = data.get('value', 6)
     
     player = game.get_player(request.sid)
-    my_dice = player.dice if player else []
+    
+    # During Palo Fijo, players with >1 die can't see their own dice
+    if game.is_palo_fijo and player and player.dice_count > 1:
+        my_dice = []
+    else:
+        my_dice = player.dice if player else []
     
     # Include painted dice in known dice
     all_painted = game.get_all_painted_dice()

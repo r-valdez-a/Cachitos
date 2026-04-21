@@ -13,10 +13,10 @@ from game.probability import generate_probability_table, get_quick_probabilities
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='static', static_url_path='')
-app.config['SECRET_KEY'] = 'cachitos-secret-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cachitos-secret-key')
 
 # Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Single game instance
 game = Game()

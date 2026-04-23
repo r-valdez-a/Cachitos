@@ -14,6 +14,7 @@ let probabilityData = null;
 let currentProbTab = 'unknown';
 let selectedPaintDice = [];
 let sidebarMinimized = false;
+let chatHistory = [];
 
 // DOM Elements
 const screens = {
@@ -33,6 +34,9 @@ const elements = {
   // Lobby screen
   playerCount: document.getElementById('playerCount'),
   lobbyPlayerList: document.getElementById('lobbyPlayerList'),
+  spectatorCount: document.getElementById('spectatorCount'),
+  lobbySpectatorList: document.getElementById('lobbySpectatorList'),
+  spectatorBench: document.getElementById('spectatorBench'),
   hostControls: document.getElementById('hostControls'),
   startGameBtn: document.getElementById('startGameBtn'),
   addBotBtn: document.getElementById('addBotBtn'),
@@ -63,6 +67,7 @@ const elements = {
   probChartBtn: document.getElementById('probChartBtn'),
   stopGameBtn: document.getElementById('stopGameBtn'),
   logBtn: document.getElementById('logBtn'),
+  chatBtn: document.getElementById('chatBtn'),
   valueInputGroup: document.getElementById('valueInputGroup'),
   diceSelector: document.getElementById('diceSelector'),
   paintControls: document.getElementById('paintControls'),
@@ -96,6 +101,18 @@ const elements = {
   closeLogModal: document.getElementById('closeLogModal'),
   logContent: document.getElementById('logContent'),
   
+  // Lobby chat
+  lobbyChatMessages: document.getElementById('lobbyChatMessages'),
+  lobbyChatInput: document.getElementById('lobbyChatInput'),
+  lobbyChatSendBtn: document.getElementById('lobbyChatSendBtn'),
+  
+  // Chat modal (mobile)
+  chatModal: document.getElementById('chatModal'),
+  closeChatModal: document.getElementById('closeChatModal'),
+  modalChatMessages: document.getElementById('modalChatMessages'),
+  modalChatInput: document.getElementById('modalChatInput'),
+  modalChatSendBtn: document.getElementById('modalChatSendBtn'),
+  
   // Game over screen
   winnerDisplay: document.getElementById('winnerDisplay'),
   playAgainBtn: document.getElementById('playAgainBtn'),
@@ -109,14 +126,13 @@ const elements = {
 // ============================================
 
 function createDieElement(value, options = {}) {
-  const { isWild = false, isPainted = false, small = false } = options;
+  const { isWild = false, isPainted = false } = options;
   
   const die = document.createElement('div');
   die.className = 'die';
   if (value === 1 && isWild) die.classList.add('wild');
   if (isPainted) die.classList.add('painted');
   
-  // Create dots based on value
   const dotPatterns = {
     1: ['center'],
     2: ['top-right', 'bottom-left'],
@@ -147,6 +163,13 @@ function showScreen(screenName) {
   if (screens[screenName]) {
     screens[screenName].classList.remove('hidden');
   }
+  
+  // Re-populate chat containers when switching screens
+  if (screenName === 'lobby') {
+    renderChatHistory(elements.lobbyChatMessages);
+  } else if (screenName === 'game') {
+    renderChatHistory(elements.chatMessages);
+  }
 }
 
 // ============================================
@@ -160,14 +183,8 @@ function updateLobby(state) {
   state.players.forEach((player, index) => {
     const li = document.createElement('li');
     
-    // Add classes
-    const isFirstHuman = state.players.findIndex(p => !p.isBot) === index;
-    if (isFirstHuman) {
-      li.classList.add('host');
-    }
-    if (player.isBot) {
-      li.classList.add('bot');
-    }
+    if (player.id === state.hostId) li.classList.add('host');
+    if (player.isBot) li.classList.add('bot');
     
     // Reorder buttons (host only)
     if (state.isHost) {
@@ -208,25 +225,118 @@ function updateLobby(state) {
     const name = document.createElement('span');
     name.className = 'player-name';
     name.textContent = player.name;
-    if (player.id === myPlayerId) {
-      name.textContent += ' (You)';
-    }
+    if (player.id === myPlayerId) name.textContent += ' (You)';
     
     playerInfo.appendChild(emoji);
     playerInfo.appendChild(name);
     li.appendChild(playerInfo);
     
-    // Remove bot button (only for host, only for bots)
-    if (state.isHost && player.isBot) {
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-bot-btn';
-      removeBtn.textContent = '✕';
-      removeBtn.onclick = () => removeBot(player.id);
-      li.appendChild(removeBtn);
+    // Host action buttons
+    if (state.isHost && player.id !== myPlayerId) {
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'lobby-player-actions';
+      
+      // Make host button (non-bot only)
+      if (!player.isBot) {
+        const hostBtn = document.createElement('button');
+        hostBtn.className = 'lobby-action-btn host-btn';
+        hostBtn.textContent = '👑';
+        hostBtn.title = 'Make host';
+        hostBtn.onclick = () => socket.emit('transferHost', { targetId: player.id });
+        actionsDiv.appendChild(hostBtn);
+      }
+      
+      // Move to spectators button
+      if (!player.isBot) {
+        const benchBtn = document.createElement('button');
+        benchBtn.className = 'lobby-action-btn bench-btn';
+        benchBtn.textContent = '👁️';
+        benchBtn.title = 'Move to spectators';
+        benchBtn.onclick = () => socket.emit('moveToSpectators', { targetId: player.id });
+        actionsDiv.appendChild(benchBtn);
+      }
+      
+      // Kick button
+      const kickBtn = document.createElement('button');
+      kickBtn.className = 'lobby-action-btn kick-btn';
+      kickBtn.textContent = '✕';
+      kickBtn.title = 'Kick';
+      kickBtn.onclick = () => {
+        if (player.isBot) {
+          removeBot(player.id);
+        } else {
+          socket.emit('kickPlayer', { targetId: player.id });
+        }
+      };
+      actionsDiv.appendChild(kickBtn);
+      
+      li.appendChild(actionsDiv);
     }
     
     elements.lobbyPlayerList.appendChild(li);
   });
+  
+  // Spectator bench
+  const spectators = state.spectators || [];
+  if (elements.spectatorCount) elements.spectatorCount.textContent = spectators.length;
+  
+  if (elements.spectatorBench) {
+    if (spectators.length > 0 || state.isHost) {
+      elements.spectatorBench.classList.remove('hidden');
+    } else {
+      elements.spectatorBench.classList.add('hidden');
+    }
+  }
+  
+  if (elements.lobbySpectatorList) {
+    elements.lobbySpectatorList.innerHTML = '';
+    spectators.forEach(spec => {
+      const li = document.createElement('li');
+      li.classList.add('spectator');
+      
+      const playerInfo = document.createElement('span');
+      playerInfo.className = 'player-info';
+      
+      const emoji = document.createElement('span');
+      emoji.className = 'player-emoji';
+      emoji.textContent = spec.emoji || '👁️';
+      
+      const name = document.createElement('span');
+      name.className = 'player-name';
+      name.textContent = spec.name;
+      if (spec.id === myPlayerId) name.textContent += ' (You)';
+      
+      playerInfo.appendChild(emoji);
+      playerInfo.appendChild(name);
+      li.appendChild(playerInfo);
+      
+      // Host actions for spectators
+      if (state.isHost && spec.id !== myPlayerId) {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'lobby-player-actions';
+        
+        // Move to game table
+        const tableBtn = document.createElement('button');
+        tableBtn.className = 'lobby-action-btn table-btn';
+        tableBtn.textContent = '🎮';
+        tableBtn.title = 'Move to game table';
+        tableBtn.onclick = () => socket.emit('moveToPlayers', { targetId: spec.id });
+        actionsDiv.appendChild(tableBtn);
+        
+        // Kick
+        const kickBtn = document.createElement('button');
+        kickBtn.className = 'lobby-action-btn kick-btn';
+        kickBtn.textContent = '✕';
+        kickBtn.title = 'Kick';
+        kickBtn.onclick = () => socket.emit('kickPlayer', { targetId: spec.id });
+        actionsDiv.appendChild(kickBtn);
+        
+        li.appendChild(actionsDiv);
+      }
+      
+      elements.lobbySpectatorList.appendChild(li);
+    });
+  }
   
   // Show/hide host controls
   if (state.isHost) {
@@ -234,41 +344,39 @@ function updateLobby(state) {
     elements.waitingMessage.classList.add('hidden');
     elements.startGameBtn.disabled = state.players.length < 2;
     elements.addBotBtn.disabled = state.players.length >= 8;
+  } else if (state.isSpectator) {
+    elements.hostControls.classList.add('hidden');
+    elements.waitingMessage.textContent = '👁️ You are spectating';
+    elements.waitingMessage.classList.remove('hidden');
   } else {
     elements.hostControls.classList.add('hidden');
+    elements.waitingMessage.textContent = 'Waiting for host to start the game...';
     elements.waitingMessage.classList.remove('hidden');
   }
 }
 
 function updateGameScreen(state) {
-  // Update header
   elements.roundNumber.textContent = state.roundNumber;
   elements.totalDice.textContent = state.totalDice;
   
-  // Show/hide stop button for host
   if (state.canStop) {
     elements.stopGameBtn.classList.remove('hidden');
   } else {
     elements.stopGameBtn.classList.add('hidden');
   }
   
-  // Update Palo Fijo banner
   if (state.isPaloFijo) {
     elements.paloFijoBanner.classList.remove('hidden');
     elements.paloFijoPlayer.textContent = state.paloFijoPlayer;
     elements.paloFijoValueDisplay.textContent = state.paloFijoValue ? `${state.paloFijoValue}s` : '(first bet sets value)';
-    
-    // Lock dice selector to palo fijo value
     updateDiceSelectorForPaloFijo(state.paloFijoValue);
   } else {
     elements.paloFijoBanner.classList.add('hidden');
     resetDiceSelector();
   }
   
-  // Update players display
   updatePlayersDisplay(state);
   
-  // Update current bet
   if (state.currentBet) {
     elements.currentBetValue.textContent = `${state.currentBet.count} × ${state.currentBet.value}s`;
     elements.currentBettor.textContent = `by ${state.currentBet.playerName}`;
@@ -277,7 +385,6 @@ function updateGameScreen(state) {
     elements.currentBettor.textContent = 'First bet of the round';
   }
   
-  // Update turn indicator
   if (state.isMyTurn) {
     elements.turnIndicator.classList.add('my-turn');
     elements.turnIndicator.classList.remove('bot-turn');
@@ -292,21 +399,29 @@ function updateGameScreen(state) {
     elements.turnText.textContent = `Waiting for ${state.currentPlayerName}...`;
   }
   
-  // Update my dice
   updateMyDice(state.myDice, state.diceHidden, state.myDiceCount);
   
-  // Show/hide action area
-  if (state.state === 'betting') {
+  // Spectators can't take actions
+  if (state.isSpectator) {
+    elements.actionArea.classList.add('hidden');
+    elements.waitingTurn.classList.remove('hidden');
+    elements.waitingForPlayer.textContent = (state.currentPlayerName || '...') + ' (you are spectating)';
+    elements.resolutionDisplay.classList.add('hidden');
+    
+    if (state.state === 'resolving') {
+      elements.waitingTurn.classList.add('hidden');
+      elements.resolutionDisplay.classList.remove('hidden');
+      updateResolutionDisplay(state);
+    }
+  } else if (state.state === 'betting') {
     if (state.isMyTurn) {
       elements.actionArea.classList.remove('hidden');
       elements.waitingTurn.classList.add('hidden');
       elements.resolutionDisplay.classList.add('hidden');
       
-      // Enable/disable doubt and calzo based on whether there's a bet
       elements.doubtBtn.disabled = !state.currentBet;
       elements.calzoBtn.disabled = !state.currentBet;
       
-      // Set reasonable default bet
       if (state.currentBet) {
         elements.betCount.value = state.currentBet.count;
         if (selectedBetValue === state.currentBet.value) {
@@ -316,7 +431,6 @@ function updateGameScreen(state) {
         elements.betCount.value = 1;
       }
       
-      // Update paint controls
       updatePaintControls(state);
     } else {
       elements.actionArea.classList.add('hidden');
@@ -328,14 +442,14 @@ function updateGameScreen(state) {
     elements.actionArea.classList.add('hidden');
     elements.waitingTurn.classList.add('hidden');
     elements.resolutionDisplay.classList.remove('hidden');
-    
     updateResolutionDisplay(state);
   }
   
-  // Update sidebar log
   updateSidebarLog(state);
   
-  // Auto-refresh probability chart if open
+  // Show action cue visual feedback
+  detectAndShowActionCue(state);
+  
   if (!elements.probModal.classList.contains('hidden')) {
     refreshProbabilityChart();
   }
@@ -355,7 +469,6 @@ function updateDiceSelectorForPaloFijo(lockedValue) {
         btn.style.opacity = '0.3';
       }
     } else {
-      // Palo Fijo but no value yet - unlock all for first bet
       btn.classList.remove('locked');
       btn.style.opacity = '1';
     }
@@ -370,7 +483,6 @@ function resetDiceSelector() {
 }
 
 function updatePaintControls(state) {
-  // Hide paint controls during Palo Fijo or if already painted
   if (state.isPaloFijo || state.hasPaintedThisRound || !state.canPaint) {
     elements.paintControls.classList.add('hidden');
     selectedPaintDice = [];
@@ -387,20 +499,16 @@ function updatePaintControls(state) {
     dieOption.classList.add('paint-die-option');
     dieOption.dataset.index = index;
     dieOption.dataset.value = value;
-    
     dieOption.onclick = () => togglePaintDie(index, value, dieOption);
-    
     elements.paintDiceSelector.appendChild(dieOption);
   });
 }
 
 function togglePaintDie(index, value, element) {
-  // Can only paint dice matching the bet value or 1s
   if (value !== selectedBetValue && value !== 1) {
     showError(`Can only paint ${selectedBetValue}s or 1s (wilds)`);
     return;
   }
-  
   const idx = selectedPaintDice.indexOf(index);
   if (idx >= 0) {
     selectedPaintDice.splice(idx, 1);
@@ -417,33 +525,21 @@ function updatePlayersDisplay(state) {
   state.players.forEach(player => {
     const card = document.createElement('div');
     card.className = 'player-card';
+    if (player.id === state.currentPlayerId) card.classList.add('current-turn');
+    if (!player.isAlive) card.classList.add('eliminated');
+    if (player.isBot) card.classList.add('bot');
     
-    if (player.id === state.currentPlayerId) {
-      card.classList.add('current-turn');
-    }
-    if (!player.isAlive) {
-      card.classList.add('eliminated');
-    }
-    if (player.isBot) {
-      card.classList.add('bot');
-    }
-    
-    // Header with emoji and name
     const header = document.createElement('div');
     header.className = 'player-header';
-    
     const emoji = document.createElement('span');
     emoji.className = 'emoji';
     emoji.textContent = player.emoji || '🎲';
-    
     const name = document.createElement('div');
     name.className = 'name';
     name.textContent = player.name + (player.id === myPlayerId ? '*' : '');
-    
     header.appendChild(emoji);
     header.appendChild(name);
     
-    // Dice count
     const diceCount = document.createElement('div');
     diceCount.className = 'dice-count';
     diceCount.innerHTML = `Dice: <span>${player.diceCount}</span>`;
@@ -451,7 +547,6 @@ function updatePlayersDisplay(state) {
     card.appendChild(header);
     card.appendChild(diceCount);
     
-    // Last bet (if any)
     if (player.lastBet) {
       const lastBet = document.createElement('div');
       lastBet.className = 'last-bet';
@@ -459,7 +554,6 @@ function updatePlayersDisplay(state) {
       card.appendChild(lastBet);
     }
     
-    // Painted dice (if any)
     if (player.paintedDice && player.paintedDice.length > 0) {
       const paintedDiv = document.createElement('div');
       paintedDiv.className = 'painted-dice';
@@ -479,14 +573,11 @@ function updatePlayersDisplay(state) {
 function updateMyDice(dice, diceHidden, diceCount) {
   elements.myDice.innerHTML = '';
   
-  // Palo Fijo - dice hidden for players with >1 die
   if (diceHidden) {
     const hiddenMsg = document.createElement('div');
     hiddenMsg.className = 'dice-hidden-message';
     hiddenMsg.textContent = '🔒 Your dice are hidden during Palo Fijo';
     elements.myDice.appendChild(hiddenMsg);
-    
-    // Show face-down dice placeholders
     const container = document.createElement('div');
     container.className = 'dice-container';
     for (let i = 0; i < (diceCount || 0); i++) {
@@ -505,7 +596,7 @@ function updateMyDice(dice, diceHidden, diceCount) {
   if (!dice || dice.length === 0) {
     const noDice = document.createElement('div');
     noDice.style.color = '#6b7280';
-    noDice.textContent = 'No dice (spectating)';
+    noDice.textContent = gameState && gameState.isSpectator ? '👁️ Spectating' : 'No dice (spectating)';
     elements.myDice.appendChild(noDice);
     return;
   }
@@ -530,20 +621,11 @@ function updateResolutionDisplay(state) {
       <div class="resolution-title ${doubterWon ? 'doubt-win' : 'doubt-lose'}">
         ${doubterWon ? '✅ Doubt Successful!' : '❌ Doubt Failed!'}
       </div>
-      <div class="resolution-detail">
-        <strong>${lastAction.doubter}</strong> doubted <strong>${lastAction.bettor}</strong>'s bet
-      </div>
-      <div class="resolution-detail">
-        Bet: ${lastAction.bet.count} × ${lastAction.bet.value}s
-      </div>
-      <div class="resolution-detail">
-        Actual count: <strong>${lastAction.actualCount}</strong>
-        ${!isPaloFijo && lastAction.bet.value !== 1 ? '(including wild 1s)' : ''}
-      </div>
+      <div class="resolution-detail"><strong>${lastAction.doubter}</strong> doubted <strong>${lastAction.bettor}</strong>'s bet</div>
+      <div class="resolution-detail">Bet: ${lastAction.bet.count} × ${lastAction.bet.value}s</div>
+      <div class="resolution-detail">Actual count: <strong>${lastAction.actualCount}</strong> ${!isPaloFijo && lastAction.bet.value !== 1 ? '(including wild 1s)' : ''}</div>
       ${paloFijoNote}
-      <div class="resolution-loser">
-        ${lastAction.loser} loses a die! (${lastAction.loserDiceRemaining} remaining)
-      </div>
+      <div class="resolution-loser">${lastAction.loser} loses a die! (${lastAction.loserDiceRemaining} remaining)</div>
     `;
   } else if (lastAction.type === 'calzo') {
     const calzoWon = lastAction.isExact;
@@ -551,39 +633,23 @@ function updateResolutionDisplay(state) {
       <div class="resolution-title ${calzoWon ? 'calzo-win' : 'calzo-lose'}">
         ${calzoWon ? '🎯 Calzo Successful!' : '❌ Calzo Failed!'}
       </div>
-      <div class="resolution-detail">
-        <strong>${lastAction.caller}</strong> called Calzo on ${lastAction.bet.count} × ${lastAction.bet.value}s
-      </div>
-      <div class="resolution-detail">
-        Actual count: <strong>${lastAction.actualCount}</strong>
-        ${!isPaloFijo && lastAction.bet.value !== 1 ? '(including wild 1s)' : ''}
-      </div>
+      <div class="resolution-detail"><strong>${lastAction.caller}</strong> called Calzo on ${lastAction.bet.count} × ${lastAction.bet.value}s</div>
+      <div class="resolution-detail">Actual count: <strong>${lastAction.actualCount}</strong> ${!isPaloFijo && lastAction.bet.value !== 1 ? '(including wild 1s)' : ''}</div>
       ${paloFijoNote}
-      <div class="resolution-loser">
-        ${lastAction.caller} ${calzoWon ? 'gains' : 'loses'} a die! (${lastAction.callerDiceRemaining} remaining)
-      </div>
+      <div class="resolution-loser">${lastAction.caller} ${calzoWon ? 'gains' : 'loses'} a die! (${lastAction.callerDiceRemaining} remaining)</div>
     `;
   }
   
   elements.resolutionContent.innerHTML = html;
   
-  // Show all dice
   if (state.revealedDice) {
     let diceHtml = '<h4>All Dice Revealed:</h4>';
     state.revealedDice.forEach(playerDice => {
       const diceElements = playerDice.dice.map((d, idx) => {
         const isPainted = playerDice.paintedIndices && playerDice.paintedIndices.includes(idx);
-        return `<div class="die ${d === 1 ? 'wild' : ''} ${isPainted ? 'painted' : ''}">
-          ${getDotPatternHTML(d)}
-        </div>`;
+        return `<div class="die ${d === 1 ? 'wild' : ''} ${isPainted ? 'painted' : ''}">${getDotPatternHTML(d)}</div>`;
       }).join('');
-      
-      diceHtml += `
-        <div class="player-dice-row">
-          <span class="player-name">${playerDice.emoji || ''} ${playerDice.playerName}:</span>
-          <div class="dice-list">${diceElements}</div>
-        </div>
-      `;
+      diceHtml += `<div class="player-dice-row"><span class="player-name">${playerDice.emoji || ''} ${playerDice.playerName}:</span><div class="dice-list">${diceElements}</div></div>`;
     });
     elements.allDiceReveal.innerHTML = diceHtml;
   }
@@ -591,24 +657,18 @@ function updateResolutionDisplay(state) {
 
 function getDotPatternHTML(value) {
   const dotPatterns = {
-    1: ['center'],
-    2: ['top-right', 'bottom-left'],
+    1: ['center'], 2: ['top-right', 'bottom-left'],
     3: ['top-right', 'center', 'bottom-left'],
     4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
     5: ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'],
     6: ['top-left', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-right']
   };
-  
-  const dots = dotPatterns[value] || [];
-  return dots.map(pos => `<div class="dot ${pos}"></div>`).join('');
+  return (dotPatterns[value] || []).map(pos => `<div class="dot ${pos}"></div>`).join('');
 }
 
 function updateGameOver(state) {
   if (state.winner) {
-    elements.winnerDisplay.innerHTML = `
-      🏆 Winner!
-      <span class="winner-name">${state.winner.emoji || '🎲'} ${state.winner.name}</span>
-    `;
+    elements.winnerDisplay.innerHTML = `🏆 Winner!<span class="winner-name">${state.winner.emoji || '🎲'} ${state.winner.name}</span>`;
   }
 }
 
@@ -618,19 +678,13 @@ function updateGameOver(state) {
 
 function updateSidebarLog(state) {
   if (!state || !state.actionLog) return;
-  
-  const log = state.actionLog;
-  const html = renderLogHTML(log);
-  
+  const html = renderLogHTML(state.actionLog);
   elements.sidebarLogContent.innerHTML = html || '<p style="color: #6b7280; font-size: 0.75rem;">No actions yet</p>';
-  
-  // Auto-scroll to bottom
   elements.sidebarLogContent.scrollTop = elements.sidebarLogContent.scrollHeight;
 }
 
 function toggleSidebar() {
   sidebarMinimized = !sidebarMinimized;
-  
   if (sidebarMinimized) {
     elements.logSidebar.classList.add('minimized');
     elements.expandLogBtn.classList.add('visible');
@@ -641,7 +695,6 @@ function toggleSidebar() {
 }
 
 function renderLogHTML(log) {
-  // Group by round
   const byRound = {};
   log.forEach(entry => {
     const round = entry.round || entry.timestamp || 0;
@@ -651,38 +704,29 @@ function renderLogHTML(log) {
   
   let html = '';
   Object.keys(byRound).sort((a, b) => b - a).forEach(round => {
-    html += `<div class="log-round">
-      <div class="log-round-header">Round ${round}</div>`;
-    
+    html += `<div class="log-round"><div class="log-round-header">Round ${round}</div>`;
     byRound[round].forEach(entry => {
       let entryHtml = '';
       let entryClass = entry.type;
-      
       if (entry.type === 'bet') {
-        const painted = entry.painted && entry.painted.length > 0 
-          ? ` 🎨[${entry.painted.join(',')}]` : '';
+        const painted = entry.painted && entry.painted.length > 0 ? ` 🎨[${entry.painted.join(',')}]` : '';
         entryHtml = `${entry.emoji || ''} <strong>${entry.player}</strong> bet ${entry.bet.count}×${entry.bet.value}s${painted}`;
       } else if (entry.type === 'doubt') {
         const resultClass = entry.success ? 'result' : 'result fail';
-        entryHtml = `<strong>${entry.doubter}</strong> doubted ${entry.bettor}'s ${entry.bet.count}×${entry.bet.value}s 
-          → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Success' : '✗ Failed'}</span>`;
+        entryHtml = `<strong>${entry.doubter}</strong> doubted ${entry.bettor}'s ${entry.bet.count}×${entry.bet.value}s → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Success' : '✗ Failed'}</span>`;
       } else if (entry.type === 'calzo') {
         const resultClass = entry.success ? 'result' : 'result fail';
-        entryHtml = `<strong>${entry.caller}</strong> called Calzo on ${entry.bet.count}×${entry.bet.value}s 
-          → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Exact!' : '✗ Wrong'}</span>`;
+        entryHtml = `<strong>${entry.caller}</strong> called Calzo on ${entry.bet.count}×${entry.bet.value}s → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Exact!' : '✗ Wrong'}</span>`;
       } else if (entry.type === 'palo_fijo_start') {
         entryClass = 'palo-fijo';
         entryHtml = `🔒 <strong>${entry.player}</strong> triggered PALO FIJO`;
       } else if (entry.type === 'game_over') {
         entryHtml = `🏆 <strong>${entry.winner}</strong> wins the game!`;
       }
-      
       html += `<div class="log-entry ${entryClass}">${entryHtml}</div>`;
     });
-    
     html += '</div>';
   });
-  
   return html;
 }
 
@@ -692,7 +736,6 @@ function renderLogHTML(log) {
 
 function openActionLog() {
   if (!gameState || !gameState.actionLog) return;
-  
   const html = renderLogHTML(gameState.actionLog);
   elements.logContent.innerHTML = html || '<p style="color: #6b7280;">No actions yet</p>';
   elements.logModal.classList.remove('hidden');
@@ -703,14 +746,35 @@ function closeActionLog() {
 }
 
 // ============================================
+// Chat Modal (mobile)
+// ============================================
+
+function openChatModal() {
+  renderChatHistory(elements.modalChatMessages);
+  elements.chatModal.classList.remove('hidden');
+}
+
+function closeChatModal() {
+  elements.chatModal.classList.add('hidden');
+}
+
+function sendModalChatMessage() {
+  const text = elements.modalChatInput.value.trim();
+  if (!text) return;
+  socket.emit('chatMessage', { text });
+  elements.modalChatInput.value = '';
+}
+
+function sendModalQuickEmoji(emoji) {
+  socket.emit('chatMessage', { text: emoji });
+}
+
+// ============================================
 // Probability Chart
 // ============================================
 
 function getOtherPlayersPaintedDice() {
-  // Only include painted dice from OTHER players (not our own)
-  // to avoid double-counting since our own dice are already in myDice
   if (!gameState || !gameState.players) return [];
-  
   let otherPainted = [];
   gameState.players.forEach(player => {
     if (player.id !== myPlayerId && player.paintedDice && player.paintedDice.length > 0) {
@@ -728,20 +792,12 @@ function openProbabilityChart() {
 
 function refreshProbabilityChart() {
   if (!gameState) return;
-  
   const otherPainted = getOtherPlayersPaintedDice();
-  const paintedStr = otherPainted.join(',');
-  const url = `/api/probability?total_dice=${gameState.totalDice}&my_dice=${(gameState.myDice || []).join(',')}&painted_dice=${paintedStr}`;
-  
-  fetch(url)
-    .then(res => res.json())
-    .then(data => {
-      probabilityData = data;
-      renderProbabilityTable();
-    })
-    .catch(err => {
-      console.error('Failed to load probability data:', err);
-    });
+  const url = `/api/probability?total_dice=${gameState.totalDice}&my_dice=${(gameState.myDice || []).join(',')}&painted_dice=${otherPainted.join(',')}`;
+  fetch(url).then(res => res.json()).then(data => {
+    probabilityData = data;
+    renderProbabilityTable();
+  }).catch(err => console.error('Failed to load probability data:', err));
 }
 
 function closeProbabilityChart() {
@@ -750,32 +806,24 @@ function closeProbabilityChart() {
 
 function renderProbabilityTable() {
   if (!probabilityData) return;
-  
-  const data = currentProbTab === 'known' && probabilityData.known 
-    ? probabilityData.known 
-    : probabilityData.unknown;
+  const data = currentProbTab === 'known' && probabilityData.known ? probabilityData.known : probabilityData.unknown;
   
   if (currentProbTab === 'known') {
     const otherPainted = getOtherPlayersPaintedDice();
     const knownDice = (gameState.myDice || []).concat(otherPainted);
     if (gameState.diceHidden) {
-      elements.probDescription.textContent = 
-        `🔒 Your dice are hidden (Palo Fijo). Known: painted dice only ${otherPainted.join(', ') || 'none'}`;
+      elements.probDescription.textContent = `🔒 Your dice are hidden (Palo Fijo). Known: painted dice only ${otherPainted.join(', ') || 'none'}`;
     } else {
-      elements.probDescription.textContent = 
-        `Probability knowing dice: ${knownDice.join(', ') || 'none'}`;
+      elements.probDescription.textContent = `Probability knowing dice: ${knownDice.join(', ') || 'none'}`;
     }
   } else {
-    elements.probDescription.textContent = 
-      'Probability that a bet is true (without knowing any dice)';
+    elements.probDescription.textContent = 'Probability that a bet is true (without knowing any dice)';
   }
   
   const maxRows = Math.min(probabilityData.total_dice, 12);
   let html = '';
-  
   for (let count = 1; count <= maxRows; count++) {
     html += `<tr><td><strong>${count}</strong></td>`;
-    
     for (let value = 1; value <= 6; value++) {
       const valueData = data.find(v => v.value === value);
       if (valueData && valueData.probabilities[count - 1]) {
@@ -786,18 +834,14 @@ function renderProbabilityTable() {
         html += `<td>-</td>`;
       }
     }
-    
     html += '</tr>';
   }
-  
   elements.probTableBody.innerHTML = html;
 }
 
 function switchProbTab(tab) {
   currentProbTab = tab;
-  document.querySelectorAll('.prob-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tab);
-  });
+  document.querySelectorAll('.prob-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
   renderProbabilityTable();
 }
 
@@ -805,35 +849,20 @@ function switchProbTab(tab) {
 // Socket Event Handlers
 // ============================================
 
-socket.on('connect', () => {
-  console.log('Connected to server');
-});
-
-socket.on('disconnect', () => {
-  console.log('Disconnected from server');
-  showError('Connection lost. Please refresh the page.');
-});
+socket.on('connect', () => console.log('Connected to server'));
+socket.on('disconnect', () => { console.log('Disconnected'); showError('Connection lost. Please refresh.'); });
 
 socket.on('gameState', (state) => {
-  console.log('Game state:', state);
   gameState = state;
-  
   switch (state.state) {
     case 'waiting':
-      if (myPlayerId) {
-        showScreen('lobby');
-        updateLobby(state);
-      }
+      if (myPlayerId) { showScreen('lobby'); updateLobby(state); }
       break;
-    case 'betting':
-    case 'rolling':
-    case 'resolving':
-      showScreen('game');
-      updateGameScreen(state);
+    case 'betting': case 'rolling': case 'resolving':
+      showScreen('game'); updateGameScreen(state);
       break;
     case 'game_over':
-      showScreen('gameOver');
-      updateGameOver(state);
+      showScreen('gameOver'); updateGameOver(state);
       break;
   }
 });
@@ -848,51 +877,24 @@ socket.on('joinResult', (result) => {
   }
 });
 
-socket.on('error', (data) => {
-  showError(data.message);
-});
+socket.on('error', (data) => showError(data.message));
+socket.on('playerJoined', (data) => console.log(`${data.player.name} joined`));
+socket.on('playerLeft', (data) => console.log(`${data.player.name} left`));
+socket.on('botAdded', (data) => console.log(`Bot added: ${data.player.name}`));
+socket.on('botRemoved', (data) => console.log(`Bot removed: ${data.player.name}`));
+socket.on('gameStarted', () => console.log('Game started!'));
+socket.on('gameStopped', () => { console.log('Game stopped'); showScreen('lobby'); });
+socket.on('roundResolved', (result) => console.log('Round resolved:', result));
+socket.on('newRound', (data) => { console.log('New round:', data.roundNumber); selectedPaintDice = []; });
+socket.on('gameReset', () => { console.log('Game reset'); showScreen('lobby'); });
+socket.on('chatMessage', (message) => appendChatMessage(message));
 
-socket.on('playerJoined', (data) => {
-  console.log(`${data.player.name} joined`);
-});
-
-socket.on('playerLeft', (data) => {
-  console.log(`${data.player.name} left`);
-});
-
-socket.on('botAdded', (data) => {
-  console.log(`Bot added: ${data.player.name}`);
-});
-
-socket.on('botRemoved', (data) => {
-  console.log(`Bot removed: ${data.player.name}`);
-});
-
-socket.on('gameStarted', (data) => {
-  console.log('Game started!');
-});
-
-socket.on('gameStopped', () => {
-  console.log('Game stopped');
-  showScreen('lobby');
-});
-
-socket.on('roundResolved', (result) => {
-  console.log('Round resolved:', result);
-});
-
-socket.on('newRound', (data) => {
-  console.log('New round:', data.roundNumber);
-  selectedPaintDice = [];
-});
-
-socket.on('gameReset', () => {
-  console.log('Game reset');
-  showScreen('lobby');
-});
-
-socket.on('chatMessage', (message) => {
-  appendChatMessage(message);
+socket.on('kicked', (data) => {
+  alert(data.reason || 'You were kicked by the host.');
+  myPlayerId = null;
+  gameState = null;
+  chatHistory = [];
+  showScreen('join');
 });
 
 // ============================================
@@ -901,129 +903,70 @@ socket.on('chatMessage', (message) => {
 
 function joinGame() {
   const name = elements.playerName.value.trim();
-  if (!name) {
-    elements.joinError.textContent = 'Please enter your name';
-    return;
-  }
+  if (!name) { elements.joinError.textContent = 'Please enter your name'; return; }
   socket.emit('join', { name, emoji: selectedEmoji });
 }
-
-function startGame() {
-  socket.emit('startGame');
-}
-
-function stopGame() {
-  if (confirm('Are you sure you want to stop the game? All progress will be lost.')) {
-    socket.emit('stopGame');
-  }
-}
-
-function addBot() {
-  socket.emit('addBot');
-}
-
-function removeBot(botId) {
-  socket.emit('removeBot', { botId });
-}
-
-function movePlayer(playerId, direction) {
-  socket.emit('movePlayer', { playerId, direction });
-}
-
-function shufflePlayers() {
-  socket.emit('shufflePlayers');
-}
+function startGame() { socket.emit('startGame'); }
+function stopGame() { if (confirm('Stop game? All progress lost.')) socket.emit('stopGame'); }
+function addBot() { socket.emit('addBot'); }
+function removeBot(botId) { socket.emit('removeBot', { botId }); }
+function movePlayer(playerId, direction) { socket.emit('movePlayer', { playerId, direction }); }
+function shufflePlayers() { socket.emit('shufflePlayers'); }
 
 function placeBet() {
   const count = parseInt(elements.betCount.value);
   const value = selectedBetValue;
-  
-  if (isNaN(count) || count < 1) {
-    showError('Invalid bet count');
-    return;
-  }
-  
+  if (isNaN(count) || count < 1) { showError('Invalid bet count'); return; }
   const paintIndices = selectedPaintDice.length > 0 ? selectedPaintDice : null;
-  
   socket.emit('bet', { count, value, paintIndices });
   selectedPaintDice = [];
 }
-
-function callDoubt() {
-  socket.emit('doubt');
-}
-
-function callCalzo() {
-  socket.emit('calzo');
-}
-
-function nextRound() {
-  socket.emit('nextRound');
-}
-
-function playAgain() {
-  socket.emit('resetGame');
-}
+function callDoubt() { socket.emit('doubt'); }
+function callCalzo() { socket.emit('calzo'); }
+function nextRound() { socket.emit('nextRound'); }
+function playAgain() { socket.emit('resetGame'); }
 
 function adjustBetCount(delta) {
   const input = elements.betCount;
   let value = parseInt(input.value) || 1;
   value = Math.max(1, value + delta);
-  if (gameState) {
-    value = Math.min(value, gameState.totalDice);
-  }
+  if (gameState) value = Math.min(value, gameState.totalDice);
   input.value = value;
 }
 
 function selectDiceValue(value) {
   const btn = document.querySelector(`.dice-btn[data-value="${value}"]`);
-  if (btn && btn.classList.contains('locked') && !btn.classList.contains('selected')) {
-    return;
-  }
-  
+  if (btn && btn.classList.contains('locked') && !btn.classList.contains('selected')) return;
   selectedBetValue = value;
   elements.betValue.value = value;
-  
   document.querySelectorAll('.dice-btn').forEach(b => {
     b.classList.remove('selected');
-    if (parseInt(b.dataset.value) === value) {
-      b.classList.add('selected');
-    }
+    if (parseInt(b.dataset.value) === value) b.classList.add('selected');
   });
-  
-  if (gameState && gameState.canPaint) {
-    updatePaintControls(gameState);
-  }
+  if (gameState && gameState.canPaint) updatePaintControls(gameState);
 }
 
 function selectEmoji(emoji) {
   selectedEmoji = emoji;
   document.querySelectorAll('.emoji-btn').forEach(btn => {
     btn.classList.remove('selected');
-    if (btn.dataset.emoji === emoji) {
-      btn.classList.add('selected');
-    }
+    if (btn.dataset.emoji === emoji) btn.classList.add('selected');
   });
 }
 
 function showError(message) {
   elements.errorToast.textContent = message;
   elements.errorToast.classList.remove('hidden');
-  setTimeout(() => {
-    elements.errorToast.classList.add('hidden');
-  }, 3000);
+  setTimeout(() => elements.errorToast.classList.add('hidden'), 3000);
 }
 
+// ============================================
 // Event Listeners
+// ============================================
+
 elements.joinBtn.addEventListener('click', joinGame);
-elements.playerName.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') joinGame();
-});
-
-document.querySelectorAll('.emoji-btn').forEach(btn => {
-  btn.addEventListener('click', () => selectEmoji(btn.dataset.emoji));
-});
-
+elements.playerName.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinGame(); });
+document.querySelectorAll('.emoji-btn').forEach(btn => btn.addEventListener('click', () => selectEmoji(btn.dataset.emoji)));
 elements.startGameBtn.addEventListener('click', startGame);
 elements.addBotBtn.addEventListener('click', addBot);
 elements.shuffleBtn.addEventListener('click', shufflePlayers);
@@ -1034,37 +977,97 @@ elements.nextRoundBtn.addEventListener('click', nextRound);
 elements.probChartBtn.addEventListener('click', openProbabilityChart);
 elements.stopGameBtn.addEventListener('click', stopGame);
 elements.logBtn.addEventListener('click', openActionLog);
+elements.chatBtn.addEventListener('click', openChatModal);
 elements.minimizeLogBtn.addEventListener('click', toggleSidebar);
 elements.expandLogBtn.addEventListener('click', toggleSidebar);
-
 elements.closeProbModal.addEventListener('click', closeProbabilityChart);
-elements.probModal.addEventListener('click', (e) => {
-  if (e.target === elements.probModal) closeProbabilityChart();
-});
-
+elements.probModal.addEventListener('click', (e) => { if (e.target === elements.probModal) closeProbabilityChart(); });
 elements.closeLogModal.addEventListener('click', closeActionLog);
-elements.logModal.addEventListener('click', (e) => {
-  if (e.target === elements.logModal) closeActionLog();
-});
-
-document.querySelectorAll('.prob-tab').forEach(tab => {
-  tab.addEventListener('click', () => switchProbTab(tab.dataset.tab));
-});
-
-document.querySelectorAll('.dice-btn').forEach(btn => {
-  btn.addEventListener('click', () => selectDiceValue(parseInt(btn.dataset.value)));
-});
-
+elements.logModal.addEventListener('click', (e) => { if (e.target === elements.logModal) closeActionLog(); });
+elements.closeChatModal.addEventListener('click', closeChatModal);
+elements.chatModal.addEventListener('click', (e) => { if (e.target === elements.chatModal) closeChatModal(); });
+elements.modalChatSendBtn.addEventListener('click', sendModalChatMessage);
+elements.modalChatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendModalChatMessage(); });
+document.querySelectorAll('.modal-chat-emoji').forEach(btn => btn.addEventListener('click', () => sendModalQuickEmoji(btn.dataset.emoji)));
+document.querySelectorAll('.prob-tab').forEach(tab => tab.addEventListener('click', () => switchProbTab(tab.dataset.tab)));
+document.querySelectorAll('.dice-btn').forEach(btn => btn.addEventListener('click', () => selectDiceValue(parseInt(btn.dataset.value))));
 elements.playAgainBtn.addEventListener('click', playAgain);
 
 elements.betCount.addEventListener('input', () => {
   let value = parseInt(elements.betCount.value);
-  if (isNaN(value) || value < 1) {
-    elements.betCount.value = 1;
-  } else if (gameState && value > gameState.totalDice) {
-    elements.betCount.value = gameState.totalDice;
-  }
+  if (isNaN(value) || value < 1) elements.betCount.value = 1;
+  else if (gameState && value > gameState.totalDice) elements.betCount.value = gameState.totalDice;
 });
+
+// ============================================
+// Action Cue (visual feedback on actions)
+// ============================================
+
+// Different settings per action for testing - adjust to find the sweet spot
+const ACTION_CUE_CONFIG = {
+  bet:    { emoji: '⬆️', fontSize: '160px', holdMs: 500, fadeMs: 1000 },
+  paint:  { emoji: '🎨', fontSize: '160px', holdMs: 500, fadeMs: 1000 },
+  doubt:  { emoji: '🤔', fontSize: '160px', holdMs: 500, fadeMs: 1000 },
+  calzo:  { emoji: '🎯', fontSize: '160px', holdMs: 500, fadeMs: 1000 }
+};
+
+let lastActionCueId = null; // Track which action we last showed
+
+function showActionCue(type) {
+  const config = ACTION_CUE_CONFIG[type];
+  if (!config) return;
+
+  const cue = document.getElementById('actionCue');
+  
+  // Reset any in-progress animation
+  cue.classList.remove('fading');
+  cue.classList.add('hidden');
+  
+  // Force reflow so transitions reset
+  void cue.offsetWidth;
+  
+  // Set per-type CSS variables
+  cue.style.setProperty('--cue-size', config.fontSize);
+  cue.style.setProperty('--cue-fade', config.fadeMs + 'ms');
+  
+  // Set emoji content
+  cue.innerHTML = `<span class="cue-emoji">${config.emoji}</span>`;
+  
+  // Show
+  cue.classList.remove('hidden');
+  
+  // Hold, then fade
+  setTimeout(() => {
+    cue.classList.add('fading');
+    // After fade completes, hide
+    setTimeout(() => {
+      cue.classList.add('hidden');
+      cue.classList.remove('fading');
+    }, config.fadeMs);
+  }, config.holdMs);
+}
+
+function detectAndShowActionCue(state) {
+  const action = state.lastAction;
+  if (!action) return;
+  
+  // Build a unique ID for this action so we don't repeat
+  const actionId = JSON.stringify(action);
+  if (actionId === lastActionCueId) return;
+  lastActionCueId = actionId;
+  
+  if (action.type === 'bet') {
+    if (action.painted && action.painted.length > 0) {
+      showActionCue('paint');
+    } else {
+      showActionCue('bet');
+    }
+  } else if (action.type === 'doubt') {
+    showActionCue('doubt');
+  } else if (action.type === 'calzo') {
+    showActionCue('calzo');
+  }
+}
 
 // ============================================
 // Chat
@@ -1074,7 +1077,6 @@ let chatMinimized = false;
 
 function toggleChat() {
   chatMinimized = !chatMinimized;
-  
   if (chatMinimized) {
     elements.chatSidebar.classList.add('minimized');
     elements.expandChatBtn.classList.add('visible');
@@ -1087,7 +1089,6 @@ function toggleChat() {
 function sendChatMessage() {
   const text = elements.chatInput.value.trim();
   if (!text) return;
-  
   socket.emit('chatMessage', { text });
   elements.chatInput.value = '';
 }
@@ -1096,23 +1097,52 @@ function sendQuickEmoji(emoji) {
   socket.emit('chatMessage', { text: emoji });
 }
 
-function appendChatMessage(message) {
+function formatTimestamp(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function createChatMessageElement(message) {
   const div = document.createElement('div');
   div.className = 'chat-message';
   
-  // Check if emoji-only message (single emoji or just emojis)
   const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(message.text) && message.text.length <= 4;
-  if (isEmojiOnly) {
-    div.classList.add('emoji-only');
-  }
+  if (isEmojiOnly) div.classList.add('emoji-only');
+  
+  const senderLabel = message.isSpectator 
+    ? `${message.emoji || '👁️'} ${message.sender} <span class="chat-spectator-tag">- Spectator</span>`
+    : `${message.emoji || '🎲'} ${message.sender}`;
+  
+  const timeStr = formatTimestamp(message.timestamp);
   
   div.innerHTML = `
-    <div class="chat-sender">${message.emoji || '🎲'} ${message.sender}</div>
+    <div class="chat-sender">${senderLabel} <span class="chat-time">${timeStr}</span></div>
     <div class="chat-text">${escapeHtml(message.text)}</div>
   `;
-  
-  elements.chatMessages.appendChild(div);
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  return div;
+}
+
+function appendToContainer(container, message) {
+  if (!container) return;
+  container.appendChild(createChatMessageElement(message));
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderChatHistory(container) {
+  if (!container) return;
+  container.innerHTML = '';
+  chatHistory.forEach(msg => container.appendChild(createChatMessageElement(msg)));
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendChatMessage(message) {
+  chatHistory.push(message);
+  appendToContainer(elements.lobbyChatMessages, message);
+  appendToContainer(elements.chatMessages, message);
+  appendToContainer(elements.modalChatMessages, message);
 }
 
 function escapeHtml(text) {
@@ -1125,11 +1155,27 @@ function escapeHtml(text) {
 elements.minimizeChatBtn.addEventListener('click', toggleChat);
 elements.expandChatBtn.addEventListener('click', toggleChat);
 elements.chatSendBtn.addEventListener('click', sendChatMessage);
-elements.chatInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') sendChatMessage();
+elements.chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+
+elements.lobbyChatSendBtn.addEventListener('click', () => {
+  const text = elements.lobbyChatInput.value.trim();
+  if (!text) return;
+  socket.emit('chatMessage', { text });
+  elements.lobbyChatInput.value = '';
+});
+elements.lobbyChatInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    const text = elements.lobbyChatInput.value.trim();
+    if (!text) return;
+    socket.emit('chatMessage', { text });
+    elements.lobbyChatInput.value = '';
+  }
 });
 
-document.querySelectorAll('.chat-emoji-btn').forEach(btn => {
+document.querySelectorAll('.chat-emoji-btn:not(.modal-chat-emoji):not(.lobby-chat-emoji)').forEach(btn => {
+  btn.addEventListener('click', () => sendQuickEmoji(btn.dataset.emoji));
+});
+document.querySelectorAll('.lobby-chat-emoji').forEach(btn => {
   btn.addEventListener('click', () => sendQuickEmoji(btn.dataset.emoji));
 });
 

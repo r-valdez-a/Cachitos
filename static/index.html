@@ -67,6 +67,38 @@
       <div id="waitingMessage" class="waiting-message">
         Waiting for host to start the game...
       </div>
+
+      <!-- Spectator Bench -->
+      <div id="spectatorBench" class="spectator-bench hidden">
+        <h2>👁️ Spectator Bench (<span id="spectatorCount">0</span>)</h2>
+        <ul id="lobbySpectatorList"></ul>
+      </div>
+
+      <!-- Lobby Chat -->
+      <div class="lobby-chat">
+        <h3>💬 Chat</h3>
+        <div id="lobbyChatMessages" class="chat-messages"></div>
+        <div class="chat-input-area">
+          <div class="chat-quick-emojis">
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="😂">😂</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="👍">👍</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="🎲">🎲</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="🔥">🔥</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="💀">💀</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="🤔">🤔</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="🎯">🎯</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="😱">😱</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="👎">👎</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="🖕">🖕</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="😈">😈</button>
+            <button type="button" class="chat-emoji-btn lobby-chat-emoji" data-emoji="🤑">🤑</button>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" id="lobbyChatInput" placeholder="Type a message..." maxlength="100" autocomplete="off">
+            <button id="lobbyChatSendBtn">Send</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Game Screen (with sidebar layout) -->
@@ -91,6 +123,7 @@
             <div class="round-info">Round <span id="roundNumber">1</span></div>
             <div class="header-buttons">
               <button id="logBtn" class="btn btn-small btn-secondary hidden-desktop">📜 Log</button>
+              <button id="chatBtn" class="btn btn-small btn-secondary hidden-desktop">💬 Chat</button>
               <button id="probChartBtn" class="btn btn-small btn-info">📊 Odds</button>
               <button id="stopGameBtn" class="btn btn-small btn-danger hidden">⏹ Stop</button>
             </div>
@@ -201,6 +234,10 @@
               <button type="button" class="chat-emoji-btn" data-emoji="🤔">🤔</button>
               <button type="button" class="chat-emoji-btn" data-emoji="🎯">🎯</button>
               <button type="button" class="chat-emoji-btn" data-emoji="😱">😱</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="👎">👎</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="🖕">🖕</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="😈">😈</button>
+              <button type="button" class="chat-emoji-btn" data-emoji="🤑">🤑</button>
             </div>
             <div class="chat-input-row">
               <input type="text" id="chatInput" placeholder="Type..." maxlength="100" autocomplete="off">
@@ -271,6 +308,42 @@
         </div>
       </div>
     </div>
+
+    <!-- Chat Modal (mobile fallback) -->
+    <div id="chatModal" class="modal hidden">
+      <div class="modal-content modal-chat">
+        <div class="modal-header">
+          <h2>💬 Chat</h2>
+          <button id="closeChatModal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body modal-chat-body">
+          <div id="modalChatMessages" class="chat-messages"></div>
+          <div class="chat-input-area">
+            <div class="chat-quick-emojis">
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="😂">😂</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="👍">👍</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="🎲">🎲</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="🔥">🔥</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="💀">💀</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="🤔">🤔</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="🎯">🎯</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="😱">😱</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="👎">👎</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="🖕">🖕</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="😈">😈</button>
+              <button type="button" class="chat-emoji-btn modal-chat-emoji" data-emoji="🤑">🤑</button>
+            </div>
+            <div class="chat-input-row">
+              <input type="text" id="modalChatInput" placeholder="Type..." maxlength="100" autocomplete="off">
+              <button id="modalChatSendBtn">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Cue Overlay -->
+    <div id="actionCue" class="action-cue hidden"></div>
 
     <!-- Error Toast -->
     <div id="errorToast" class="toast hidden"></div>

@@ -21,6 +21,7 @@ class Player:
         self.dice = []  # Current dice values (hidden from others)
         self.is_connected = True
         self.is_bot = False  # Whether this player is a bot
+        self.is_spectator = False  # Whether this player is a spectator
         
         # Palo Fijo tracking
         self.has_triggered_palo_fijo = False  # Only triggers once per game
@@ -100,7 +101,8 @@ class Player:
             'isBot': self.is_bot,
             'lastBet': self.last_bet,
             'paintedDice': self.get_painted_dice_values(),
-            'hasPaintedThisRound': self.has_painted_this_round
+            'hasPaintedThisRound': self.has_painted_this_round,
+            'isSpectator': self.is_spectator
         }
 
     def get_private_info(self) -> dict:

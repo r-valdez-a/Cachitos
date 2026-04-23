@@ -54,10 +54,13 @@ def get_local_ips():
 
 
 def broadcast_game_state_to_all():
-    """Broadcast game state to all connected players"""
+    """Broadcast game state to all connected players and spectators"""
     for player in game.players:
         if player.is_connected and not player.is_bot:
             socketio.emit('gameState', game.get_state_for_player(player.id), room=player.id)
+    for spectator in game.spectators:
+        if spectator.is_connected:
+            socketio.emit('gameState', game.get_state_for_player(spectator.id), room=spectator.id)
 
 
 def process_bot_turn():
@@ -188,9 +191,18 @@ def handle_disconnect():
 
 @socketio.on('join')
 def handle_join(data):
-    """Handle player joining the game"""
+    """Handle player joining the game (as player or spectator)"""
     name = data.get('name', '')
     emoji = data.get('emoji', None)
+    
+    # Check if already in game (player or spectator)
+    existing = game.get_player(request.sid)
+    if existing:
+        emit('joinResult', {'success': True, 'playerId': request.sid})
+        broadcast_game_state_to_all()
+        return
+    
+    # Try to join as player first
     result = game.add_player(request.sid, name, emoji)
     
     if result['success']:
@@ -203,7 +215,20 @@ def handle_join(data):
             'playerCount': len(game.players)
         })
     else:
-        emit('joinResult', {'success': False, 'error': result['error']})
+        # If game in progress or full, join as spectator
+        if game.state != 'waiting' or len(game.players) >= game.max_players:
+            if not name or not name.strip():
+                emit('joinResult', {'success': False, 'error': 'Name is required'})
+                return
+            from game.player import Player
+            spectator = Player(request.sid, name.strip(), emoji)
+            spectator.is_spectator = True
+            game.spectators.append(spectator)
+            print(f"{spectator.emoji} {name} joined as spectator")
+            emit('joinResult', {'success': True, 'playerId': request.sid})
+            broadcast_game_state_to_all()
+        else:
+            emit('joinResult', {'success': False, 'error': result['error']})
 
 
 @socketio.on('addBot')
@@ -390,6 +415,63 @@ def handle_reset_game():
         emit('error', {'message': 'Only the host can reset the game'})
 
 
+@socketio.on('transferHost')
+def handle_transfer_host(data):
+    """Handle host transferring host role to another player"""
+    target_id = data.get('targetId', '')
+    result = game.transfer_host(request.sid, target_id)
+    
+    if result['success']:
+        print(f"Host transferred to: {result['player'].name}")
+        broadcast_game_state_to_all()
+    else:
+        emit('error', {'message': result['error']})
+
+
+@socketio.on('kickPlayer')
+def handle_kick_player(data):
+    """Handle host kicking a player or spectator"""
+    target_id = data.get('targetId', '')
+    result = game.kick_player(request.sid, target_id)
+    
+    if result['success']:
+        player = result['player']
+        print(f"Kicked: {player.name}")
+        # Notify the kicked player
+        socketio.emit('kicked', {'reason': 'You were kicked by the host'}, room=target_id)
+        broadcast_game_state_to_all()
+    else:
+        emit('error', {'message': result['error']})
+
+
+@socketio.on('moveToSpectators')
+def handle_move_to_spectators(data):
+    """Handle host moving a player to spectator bench"""
+    target_id = data.get('targetId', '')
+    result = game.move_to_spectators(request.sid, target_id)
+    
+    if result['success']:
+        player = result['player']
+        print(f"Moved to spectators: {player.name}")
+        broadcast_game_state_to_all()
+    else:
+        emit('error', {'message': result['error']})
+
+
+@socketio.on('moveToPlayers')
+def handle_move_to_players(data):
+    """Handle host moving a spectator to game table"""
+    target_id = data.get('targetId', '')
+    result = game.move_to_players(request.sid, target_id)
+    
+    if result['success']:
+        player = result['player']
+        print(f"Moved to game table: {player.name}")
+        broadcast_game_state_to_all()
+    else:
+        emit('error', {'message': result['error']})
+
+
 @socketio.on('chatMessage')
 def handle_chat_message(data):
     """Handle chat message from a player"""
@@ -405,7 +487,8 @@ def handle_chat_message(data):
         'sender': player.name,
         'emoji': player.emoji,
         'text': text,
-        'timestamp': time.time()
+        'timestamp': time.time(),
+        'isSpectator': player.is_spectator
     }
     
     # Store in chat history (keep last 50)

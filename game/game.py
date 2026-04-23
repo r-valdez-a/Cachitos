@@ -21,6 +21,7 @@ class GameState:
 class Game:
     def __init__(self):
         self.players: List[Player] = []
+        self.spectators: List[Player] = []  # Spectators (can chat, can't play)
         self.bots: Dict[str, BotPlayer] = {}  # Bot AI instances by player_id
         self.state = GameState.WAITING
         self.current_player_index = 0
@@ -32,6 +33,7 @@ class Game:
         self.round_starter_index = 0
         self.min_players = 2
         self.max_players = 8
+        self.host_id = None  # Persistent host (first human player to join)
         
         # Palo Fijo state
         self.is_palo_fijo = False
@@ -57,6 +59,11 @@ class Game:
 
         player = Player(player_id, name.strip(), emoji)
         self.players.append(player)
+        
+        # Set as host if no host yet
+        if self.host_id is None:
+            self.host_id = player_id
+        
         return {'success': True, 'player': player}
 
     def add_bot(self) -> dict:
@@ -102,6 +109,11 @@ class Game:
         if not player:
             return {'success': False}
 
+        # Check if spectator
+        if player.is_spectator:
+            self.spectators = [p for p in self.spectators if p.id != player_id]
+            return {'success': True, 'player': player}
+
         if self.state == GameState.WAITING:
             # Remove completely if game hasn't started
             self.players = [p for p in self.players if p.id != player_id]
@@ -111,6 +123,9 @@ class Game:
             # Mark as disconnected if game in progress
             player.is_connected = False
             player.dice_count = 0  # Eliminate from game
+
+        # Transfer host if needed
+        self._ensure_host()
 
         # Check if game should end
         self.check_game_over()
@@ -127,11 +142,95 @@ class Game:
         return {'success': False}
 
     def get_player(self, player_id: str) -> Optional[Player]:
-        """Get a player by ID"""
+        """Get a player by ID (searches players and spectators)"""
         for player in self.players:
             if player.id == player_id:
                 return player
+        for player in self.spectators:
+            if player.id == player_id:
+                return player
         return None
+
+    def kick_player(self, host_id: str, target_id: str) -> dict:
+        """Kick a player or spectator (host only, lobby only)"""
+        if not self.is_host(host_id):
+            return {'success': False, 'error': 'Only the host can kick players'}
+        if host_id == target_id:
+            return {'success': False, 'error': 'Cannot kick yourself'}
+        
+        # Search in players
+        target = None
+        for p in self.players:
+            if p.id == target_id:
+                target = p
+                self.players = [x for x in self.players if x.id != target_id]
+                if target_id in self.bots:
+                    del self.bots[target_id]
+                break
+        
+        # Search in spectators
+        if not target:
+            for p in self.spectators:
+                if p.id == target_id:
+                    target = p
+                    self.spectators = [x for x in self.spectators if x.id != target_id]
+                    break
+        
+        if not target:
+            return {'success': False, 'error': 'Player not found'}
+        
+        return {'success': True, 'player': target}
+
+    def move_to_spectators(self, host_id: str, target_id: str) -> dict:
+        """Move a player from game table to spectator bench (host only, lobby only)"""
+        if not self.is_host(host_id):
+            return {'success': False, 'error': 'Only the host can move players'}
+        if self.state != GameState.WAITING:
+            return {'success': False, 'error': 'Can only move players in lobby'}
+        if host_id == target_id:
+            return {'success': False, 'error': 'Cannot move yourself to spectators'}
+        
+        target = None
+        for p in self.players:
+            if p.id == target_id:
+                target = p
+                break
+        
+        if not target:
+            return {'success': False, 'error': 'Player not found in game table'}
+        
+        self.players = [x for x in self.players if x.id != target_id]
+        if target_id in self.bots:
+            del self.bots[target_id]
+        target.is_spectator = True
+        self.spectators.append(target)
+        
+        return {'success': True, 'player': target}
+
+    def move_to_players(self, host_id: str, target_id: str) -> dict:
+        """Move a spectator from bench to game table (host only, lobby only)"""
+        if not self.is_host(host_id):
+            return {'success': False, 'error': 'Only the host can move players'}
+        if self.state != GameState.WAITING:
+            return {'success': False, 'error': 'Can only move players in lobby'}
+        if len(self.players) >= self.max_players:
+            return {'success': False, 'error': 'Game table is full'}
+        
+        target = None
+        for p in self.spectators:
+            if p.id == target_id:
+                target = p
+                break
+        
+        if not target:
+            return {'success': False, 'error': 'Spectator not found'}
+        
+        self.spectators = [x for x in self.spectators if x.id != target_id]
+        target.is_spectator = False
+        target.reset_for_new_game()
+        self.players.append(target)
+        
+        return {'success': True, 'player': target}
 
     def move_player(self, player_id: str, direction: str) -> dict:
         """Move a player up or down in the order (lobby only)"""
@@ -160,11 +259,39 @@ class Game:
         return {'success': True}
 
     def is_host(self, player_id: str) -> bool:
-        """Check if a player is the host (first non-bot player)"""
-        for player in self.players:
-            if not getattr(player, 'is_bot', False):
-                return player.id == player_id
-        return False
+        """Check if a player is the host (persistent, not position-based)"""
+        return self.host_id is not None and self.host_id == player_id
+
+    def _ensure_host(self):
+        """Ensure there's a valid host. Transfer if current host left."""
+        # Check if current host is still in players
+        if self.host_id:
+            for p in self.players:
+                if p.id == self.host_id and not p.is_bot:
+                    return  # Host still present
+        # Transfer to first non-bot player
+        for p in self.players:
+            if not p.is_bot and p.is_connected:
+                self.host_id = p.id
+                return
+        self.host_id = None
+
+    def transfer_host(self, host_id: str, target_id: str) -> dict:
+        """Transfer host to another player (host only)"""
+        if not self.is_host(host_id):
+            return {'success': False, 'error': 'Only the host can transfer host'}
+        if host_id == target_id:
+            return {'success': False, 'error': 'You are already the host'}
+        # Target must be a non-bot player
+        target = None
+        for p in self.players:
+            if p.id == target_id and not p.is_bot:
+                target = p
+                break
+        if not target:
+            return {'success': False, 'error': 'Player not found'}
+        self.host_id = target_id
+        return {'success': True, 'player': target}
 
     def stop_game(self, host_id: str) -> dict:
         """Stop the game and return to lobby (host only)"""
@@ -699,6 +826,7 @@ class Game:
             'lastAction': self.last_action,
             'revealedDice': self.revealed_dice,
             'winner': winner.get_public_info() if winner else None,
+            'hostId': self.host_id,
             'isHost': self.is_host(player_id),
             'canStart': (
                 self.is_host(player_id) and
@@ -722,7 +850,10 @@ class Game:
             'hasPaintedThisRound': player.has_painted_this_round if player else False,
             'allPaintedDice': self.get_all_painted_dice(),
             # Action log
-            'actionLog': self.action_log
+            'actionLog': self.action_log,
+            # Spectators
+            'spectators': [p.get_public_info() for p in self.spectators],
+            'isSpectator': player.is_spectator if player else False
         }
 
     def get_public_state(self) -> dict:

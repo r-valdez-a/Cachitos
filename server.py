@@ -15,8 +15,18 @@ from game.probability import generate_probability_table, get_quick_probabilities
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cachitos-secret-key')
 
+# Try eventlet for production, fall back to threading for local dev
+try:
+    import eventlet
+    eventlet.monkey_patch()
+    async_mode = 'eventlet'
+except (ImportError, Exception):
+    async_mode = 'threading'
+
+print(f'Using async mode: {async_mode}')
+
 # Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
 
 # Single game instance
 game = Game()
@@ -135,6 +145,12 @@ def index():
 def static_files(path):
     """Serve static files"""
     return send_from_directory('static', path)
+
+
+@app.route('/api/ping')
+def ping():
+    """Keep-alive endpoint to prevent Render free tier from sleeping"""
+    return 'pong'
 
 
 @app.route('/api/probability')

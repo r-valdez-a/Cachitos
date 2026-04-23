@@ -811,6 +811,87 @@ h3 {
 .die .dot.bottom-left { bottom: 8px; left: 8px; }
 .die .dot.bottom-right { bottom: 8px; right: 8px; }
 
+/* Duel (1v1) Banner */
+.duel-banner {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border: 2px solid #8b5cf6;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.duel-text {
+  color: white;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.duel-detail {
+  color: #ddd6fe;
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+/* Inline Die Icon (for text displays) */
+.die-inline {
+  display: inline-block;
+  background: white;
+  border-radius: 3px;
+  position: relative;
+  vertical-align: middle;
+  margin: 0 2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.die-inline .mini-dot {
+  position: absolute;
+  width: 22%;
+  height: 22%;
+  background: #1f2937;
+  border-radius: 50%;
+}
+
+.die-inline .mini-dot.center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.die-inline .mini-dot.top-left { top: 14%; left: 14%; }
+.die-inline .mini-dot.top-right { top: 14%; right: 14%; }
+.die-inline .mini-dot.middle-left { top: 50%; left: 14%; transform: translateY(-50%); }
+.die-inline .mini-dot.middle-right { top: 50%; right: 14%; transform: translateY(-50%); }
+.die-inline .mini-dot.bottom-left { bottom: 14%; left: 14%; }
+.die-inline .mini-dot.bottom-right { bottom: 14%; right: 14%; }
+
+/* Dice Selector Pip Buttons */
+.dice-btn.dice-btn-pip {
+  position: relative;
+  background: #374151;
+  padding: 0;
+}
+
+.dice-btn.dice-btn-pip .mini-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #9ca3af;
+  border-radius: 50%;
+}
+
+.dice-btn.dice-btn-pip.selected .mini-dot {
+  background: white;
+}
+
+.dice-btn.dice-btn-pip.locked .mini-dot {
+  background: white;
+}
+
+.dice-btn.dice-btn-pip .mini-dot.center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.dice-btn.dice-btn-pip .mini-dot.top-left { top: 5px; left: 5px; }
+.dice-btn.dice-btn-pip .mini-dot.top-right { top: 5px; right: 5px; }
+.dice-btn.dice-btn-pip .mini-dot.middle-left { top: 50%; left: 5px; transform: translateY(-50%); }
+.dice-btn.dice-btn-pip .mini-dot.middle-right { top: 50%; right: 5px; transform: translateY(-50%); }
+.dice-btn.dice-btn-pip .mini-dot.bottom-left { bottom: 5px; left: 5px; }
+.dice-btn.dice-btn-pip .mini-dot.bottom-right { bottom: 5px; right: 5px; }
+
 /* Action Area */
 .action-area {
   width: 100%;

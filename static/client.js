@@ -13,6 +13,7 @@ let selectedEmoji = '😀';
 let probabilityData = null;
 let currentProbTab = 'unknown';
 let selectedPaintDice = [];
+let paintMode = false; // Whether paint selection is visible
 let sidebarMinimized = false;
 let chatHistory = [];
 
@@ -150,6 +151,31 @@ function createDieElement(value, options = {}) {
   });
   
   return die;
+}
+
+/**
+ * Get inline HTML for a mini die with pips (for use in text displays)
+ * @param {number} value - Die face value 1-6
+ * @param {string} size - CSS size (default '20px')
+ * @returns {string} HTML string
+ */
+function dieIconHTML(value, size = '20px') {
+  const dotPatterns = {
+    1: ['center'], 2: ['top-right', 'bottom-left'],
+    3: ['top-right', 'center', 'bottom-left'],
+    4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+    5: ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'],
+    6: ['top-left', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-right']
+  };
+  const dots = (dotPatterns[value] || []).map(pos => `<span class="mini-dot ${pos}"></span>`).join('');
+  return `<span class="die-inline" style="width:${size};height:${size}">${dots}</span>`;
+}
+
+/**
+ * Format a bet as HTML with inline die icon: "4 × [die]"
+ */
+function betHTML(count, value, size = '20px') {
+  return `${count} × ${dieIconHTML(value, size)}`;
 }
 
 // ============================================
@@ -375,13 +401,23 @@ function updateGameScreen(state) {
     resetDiceSelector();
   }
   
+  // 1v1 duel banner
+  const duelBanner = document.getElementById('duelBanner');
+  if (duelBanner) {
+    if (state.is1v1) {
+      duelBanner.classList.remove('hidden');
+    } else {
+      duelBanner.classList.add('hidden');
+    }
+  }
+  
   updatePlayersDisplay(state);
   
   if (state.currentBet) {
-    elements.currentBetValue.textContent = `${state.currentBet.count} × ${state.currentBet.value}s`;
+    elements.currentBetValue.innerHTML = betHTML(state.currentBet.count, state.currentBet.value, '32px');
     elements.currentBettor.textContent = `by ${state.currentBet.playerName}`;
   } else {
-    elements.currentBetValue.textContent = 'None';
+    elements.currentBetValue.innerHTML = 'None';
     elements.currentBettor.textContent = 'First bet of the round';
   }
   
@@ -422,6 +458,18 @@ function updateGameScreen(state) {
       elements.doubtBtn.disabled = !state.currentBet;
       elements.calzoBtn.disabled = !state.currentBet;
       
+      // Paint button visibility
+      const paintBtn = document.getElementById('paintBtn');
+      if (paintBtn) {
+        if (state.isPaloFijo || state.hasPaintedThisRound || !state.canPaint) {
+          paintBtn.classList.add('hidden');
+          paintMode = false;
+          elements.paintControls.classList.add('hidden');
+        } else {
+          paintBtn.classList.remove('hidden');
+        }
+      }
+      
       if (state.currentBet) {
         elements.betCount.value = state.currentBet.count;
         if (selectedBetValue === state.currentBet.value) {
@@ -431,7 +479,12 @@ function updateGameScreen(state) {
         elements.betCount.value = 1;
       }
       
-      updatePaintControls(state);
+      // Only show paint dice if paint mode is active
+      if (paintMode) {
+        updatePaintControls(state);
+      } else {
+        elements.paintControls.classList.add('hidden');
+      }
     } else {
       elements.actionArea.classList.add('hidden');
       elements.waitingTurn.classList.remove('hidden');
@@ -483,9 +536,10 @@ function resetDiceSelector() {
 }
 
 function updatePaintControls(state) {
-  if (state.isPaloFijo || state.hasPaintedThisRound || !state.canPaint) {
+  if (!state || state.isPaloFijo || state.hasPaintedThisRound || !state.canPaint) {
     elements.paintControls.classList.add('hidden');
     selectedPaintDice = [];
+    paintMode = false;
     return;
   }
   
@@ -502,6 +556,17 @@ function updatePaintControls(state) {
     dieOption.onclick = () => togglePaintDie(index, value, dieOption);
     elements.paintDiceSelector.appendChild(dieOption);
   });
+}
+
+function togglePaintMode() {
+  if (!gameState || !gameState.canPaint || gameState.hasPaintedThisRound || gameState.isPaloFijo) return;
+  paintMode = !paintMode;
+  if (paintMode) {
+    updatePaintControls(gameState);
+  } else {
+    elements.paintControls.classList.add('hidden');
+    selectedPaintDice = [];
+  }
 }
 
 function togglePaintDie(index, value, element) {
@@ -550,7 +615,7 @@ function updatePlayersDisplay(state) {
     if (player.lastBet) {
       const lastBet = document.createElement('div');
       lastBet.className = 'last-bet';
-      lastBet.textContent = `${player.lastBet.count}×${player.lastBet.value}s`;
+      lastBet.innerHTML = betHTML(player.lastBet.count, player.lastBet.value, '14px');
       card.appendChild(lastBet);
     }
     
@@ -622,21 +687,30 @@ function updateResolutionDisplay(state) {
         ${doubterWon ? '✅ Doubt Successful!' : '❌ Doubt Failed!'}
       </div>
       <div class="resolution-detail"><strong>${lastAction.doubter}</strong> doubted <strong>${lastAction.bettor}</strong>'s bet</div>
-      <div class="resolution-detail">Bet: ${lastAction.bet.count} × ${lastAction.bet.value}s</div>
+      <div class="resolution-detail">Bet: ${betHTML(lastAction.bet.count, lastAction.bet.value, '22px')}</div>
       <div class="resolution-detail">Actual count: <strong>${lastAction.actualCount}</strong> ${!isPaloFijo && lastAction.bet.value !== 1 ? '(including wild 1s)' : ''}</div>
       ${paloFijoNote}
       <div class="resolution-loser">${lastAction.loser} loses a die! (${lastAction.loserDiceRemaining} remaining)</div>
     `;
   } else if (lastAction.type === 'calzo') {
     const calzoWon = lastAction.isExact;
+    const is1v1 = lastAction.is1v1;
+    let calzoOutcome;
+    if (calzoWon && is1v1) {
+      calzoOutcome = `${lastAction.caller} called it right! No die gained (1v1 duel). (${lastAction.callerDiceRemaining} remaining)`;
+    } else if (calzoWon) {
+      calzoOutcome = `${lastAction.caller} gains a die! (${lastAction.callerDiceRemaining} remaining)`;
+    } else {
+      calzoOutcome = `${lastAction.caller} loses a die! (${lastAction.callerDiceRemaining} remaining)`;
+    }
     html = `
       <div class="resolution-title ${calzoWon ? 'calzo-win' : 'calzo-lose'}">
         ${calzoWon ? '🎯 Calzo Successful!' : '❌ Calzo Failed!'}
       </div>
-      <div class="resolution-detail"><strong>${lastAction.caller}</strong> called Calzo on ${lastAction.bet.count} × ${lastAction.bet.value}s</div>
+      <div class="resolution-detail"><strong>${lastAction.caller}</strong> called Calzo on ${betHTML(lastAction.bet.count, lastAction.bet.value, '22px')}</div>
       <div class="resolution-detail">Actual count: <strong>${lastAction.actualCount}</strong> ${!isPaloFijo && lastAction.bet.value !== 1 ? '(including wild 1s)' : ''}</div>
       ${paloFijoNote}
-      <div class="resolution-loser">${lastAction.caller} ${calzoWon ? 'gains' : 'loses'} a die! (${lastAction.callerDiceRemaining} remaining)</div>
+      <div class="resolution-loser">${calzoOutcome}</div>
     `;
   }
   
@@ -703,20 +777,20 @@ function renderLogHTML(log) {
   });
   
   let html = '';
-  Object.keys(byRound).sort((a, b) => b - a).forEach(round => {
+  Object.keys(byRound).sort((a, b) => a - b).forEach(round => {
     html += `<div class="log-round"><div class="log-round-header">Round ${round}</div>`;
     byRound[round].forEach(entry => {
       let entryHtml = '';
       let entryClass = entry.type;
       if (entry.type === 'bet') {
         const painted = entry.painted && entry.painted.length > 0 ? ` 🎨[${entry.painted.join(',')}]` : '';
-        entryHtml = `${entry.emoji || ''} <strong>${entry.player}</strong> bet ${entry.bet.count}×${entry.bet.value}s${painted}`;
+        entryHtml = `${entry.emoji || ''} <strong>${entry.player}</strong> bet ${betHTML(entry.bet.count, entry.bet.value, '14px')}${painted}`;
       } else if (entry.type === 'doubt') {
         const resultClass = entry.success ? 'result' : 'result fail';
-        entryHtml = `<strong>${entry.doubter}</strong> doubted ${entry.bettor}'s ${entry.bet.count}×${entry.bet.value}s → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Success' : '✗ Failed'}</span>`;
+        entryHtml = `<strong>${entry.doubter}</strong> doubted ${entry.bettor}'s ${betHTML(entry.bet.count, entry.bet.value, '14px')} → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Success' : '✗ Failed'}</span>`;
       } else if (entry.type === 'calzo') {
         const resultClass = entry.success ? 'result' : 'result fail';
-        entryHtml = `<strong>${entry.caller}</strong> called Calzo on ${entry.bet.count}×${entry.bet.value}s → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Exact!' : '✗ Wrong'}</span>`;
+        entryHtml = `<strong>${entry.caller}</strong> called Calzo on ${betHTML(entry.bet.count, entry.bet.value, '14px')} → Actual: ${entry.actualCount} <span class="${resultClass}">${entry.success ? '✓ Exact!' : '✗ Wrong'}</span>`;
       } else if (entry.type === 'palo_fijo_start') {
         entryClass = 'palo-fijo';
         entryHtml = `🔒 <strong>${entry.player}</strong> triggered PALO FIJO`;
@@ -854,9 +928,16 @@ socket.on('disconnect', () => { console.log('Disconnected'); showError('Connecti
 
 socket.on('gameState', (state) => {
   gameState = state;
+  
+  // Don't switch screens until the player has joined (entered name/emoji)
+  if (!myPlayerId) {
+    showScreen('join');
+    return;
+  }
+  
   switch (state.state) {
     case 'waiting':
-      if (myPlayerId) { showScreen('lobby'); updateLobby(state); }
+      showScreen('lobby'); updateLobby(state);
       break;
     case 'betting': case 'rolling': case 'resolving':
       showScreen('game'); updateGameScreen(state);
@@ -885,7 +966,7 @@ socket.on('botRemoved', (data) => console.log(`Bot removed: ${data.player.name}`
 socket.on('gameStarted', () => console.log('Game started!'));
 socket.on('gameStopped', () => { console.log('Game stopped'); showScreen('lobby'); });
 socket.on('roundResolved', (result) => console.log('Round resolved:', result));
-socket.on('newRound', (data) => { console.log('New round:', data.roundNumber); selectedPaintDice = []; });
+socket.on('newRound', (data) => { console.log('New round:', data.roundNumber); selectedPaintDice = []; paintMode = false; });
 socket.on('gameReset', () => { console.log('Game reset'); showScreen('lobby'); });
 socket.on('chatMessage', (message) => appendChatMessage(message));
 
@@ -920,6 +1001,8 @@ function placeBet() {
   const paintIndices = selectedPaintDice.length > 0 ? selectedPaintDice : null;
   socket.emit('bet', { count, value, paintIndices });
   selectedPaintDice = [];
+  paintMode = false;
+  elements.paintControls.classList.add('hidden');
 }
 function callDoubt() { socket.emit('doubt'); }
 function callCalzo() { socket.emit('calzo'); }
@@ -973,6 +1056,7 @@ elements.shuffleBtn.addEventListener('click', shufflePlayers);
 elements.placeBetBtn.addEventListener('click', placeBet);
 elements.doubtBtn.addEventListener('click', callDoubt);
 elements.calzoBtn.addEventListener('click', callCalzo);
+document.getElementById('paintBtn').addEventListener('click', togglePaintMode);
 elements.nextRoundBtn.addEventListener('click', nextRound);
 elements.probChartBtn.addEventListener('click', openProbabilityChart);
 elements.stopGameBtn.addEventListener('click', stopGame);
@@ -1178,6 +1262,11 @@ document.querySelectorAll('.chat-emoji-btn:not(.modal-chat-emoji):not(.lobby-cha
 document.querySelectorAll('.lobby-chat-emoji').forEach(btn => {
   btn.addEventListener('click', () => sendQuickEmoji(btn.dataset.emoji));
 });
+
+// Keep-alive ping to prevent Render free tier from sleeping (every 5 min)
+setInterval(() => {
+  fetch('/api/ping').catch(() => {});
+}, 5 * 60 * 1000);
 
 // Initialize
 showScreen('join');

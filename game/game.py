@@ -680,10 +680,17 @@ class Game:
             wilds_count=not self.is_palo_fijo
         )
 
+        alive_count = len(self.get_alive_players())
+        is_1v1 = alive_count == 2
+
         if is_exact:
-            # Calzo successful - player gains a die
-            current_player.gain_die()
-            outcome = 'success'
+            if is_1v1:
+                # In 1v1, calzo success does NOT gain a die (prevents endless games)
+                outcome = 'success_no_gain'
+            else:
+                # Calzo successful - player gains a die
+                current_player.gain_die()
+                outcome = 'success'
         else:
             # Calzo failed - player loses a die
             current_player.lose_die()
@@ -699,7 +706,8 @@ class Game:
             'outcome': outcome,
             'callerDiceRemaining': current_player.dice_count,
             'allDice': all_dice,
-            'isPaloFijo': self.is_palo_fijo
+            'isPaloFijo': self.is_palo_fijo,
+            'is1v1': is_1v1
         }
 
         self._log_action({
@@ -839,6 +847,8 @@ class Game:
             'isPaloFijo': self.is_palo_fijo,
             'paloFijoValue': self.palo_fijo_value,
             'paloFijoPlayer': self.palo_fijo_player,
+            # 1v1 state
+            'is1v1': len(self.get_alive_players()) == 2,
             # Paint state
             'canPaint': (
                 player and 

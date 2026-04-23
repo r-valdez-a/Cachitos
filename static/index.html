@@ -175,12 +175,12 @@
                 <div class="input-group" id="valueInputGroup">
                   <label for="betValue">Value</label>
                   <div class="dice-selector" id="diceSelector">
-                    <button type="button" class="dice-btn" data-value="1">1</button>
-                    <button type="button" class="dice-btn" data-value="2">2</button>
-                    <button type="button" class="dice-btn" data-value="3">3</button>
-                    <button type="button" class="dice-btn" data-value="4">4</button>
-                    <button type="button" class="dice-btn" data-value="5">5</button>
-                    <button type="button" class="dice-btn selected" data-value="6">6</button>
+                    <button type="button" class="dice-btn dice-btn-pip" data-value="1"><span class="mini-dot center"></span></button>
+                    <button type="button" class="dice-btn dice-btn-pip" data-value="2"><span class="mini-dot top-right"></span><span class="mini-dot bottom-left"></span></button>
+                    <button type="button" class="dice-btn dice-btn-pip" data-value="3"><span class="mini-dot top-right"></span><span class="mini-dot center"></span><span class="mini-dot bottom-left"></span></button>
+                    <button type="button" class="dice-btn dice-btn-pip" data-value="4"><span class="mini-dot top-left"></span><span class="mini-dot top-right"></span><span class="mini-dot bottom-left"></span><span class="mini-dot bottom-right"></span></button>
+                    <button type="button" class="dice-btn dice-btn-pip" data-value="5"><span class="mini-dot top-left"></span><span class="mini-dot top-right"></span><span class="mini-dot center"></span><span class="mini-dot bottom-left"></span><span class="mini-dot bottom-right"></span></button>
+                    <button type="button" class="dice-btn dice-btn-pip selected" data-value="6"><span class="mini-dot top-left"></span><span class="mini-dot top-right"></span><span class="mini-dot middle-left"></span><span class="mini-dot middle-right"></span><span class="mini-dot bottom-left"></span><span class="mini-dot bottom-right"></span></button>
                   </div>
                   <input type="hidden" id="betValue" value="6">
                 </div>
@@ -198,6 +198,7 @@
               <button id="placeBetBtn" class="btn btn-primary">Place Bet</button>
               <button id="doubtBtn" class="btn btn-danger" disabled>🤔 Doubt (Dudo)</button>
               <button id="calzoBtn" class="btn btn-warning" disabled>🎯 Calzo (Exact)</button>
+              <button id="paintBtn" class="btn btn-secondary hidden">🎨 Paint</button>
             </div>
           </div>
 

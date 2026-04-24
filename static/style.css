@@ -1887,3 +1887,62 @@ h3 {
   color: #94a3b8;
   font-style: italic;
 }
+
+/* ============================================
+   How to Play Modal
+   ============================================ */
+
+.how-to-play-btn {
+  margin-top: 10px;
+  font-size: 0.95rem;
+}
+
+.modal-how-to-play {
+  width: 100%;
+  max-width: 560px;
+}
+
+.rules-content {
+  line-height: 1.6;
+  font-size: 0.92rem;
+  color: #e2e8f0;
+}
+
+.rules-content h3 {
+  color: #f59e0b;
+  margin-top: 20px;
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+
+.rules-content h4 {
+  color: #60a5fa;
+  margin-top: 14px;
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+
+.rules-content ul,
+.rules-content ol {
+  padding-left: 20px;
+  margin-bottom: 10px;
+}
+
+.rules-content li {
+  margin-bottom: 6px;
+}
+
+.rules-content li ul {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.rules-content p {
+  margin-bottom: 8px;
+}
+
+.rules-example {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  font-style: italic;
+}

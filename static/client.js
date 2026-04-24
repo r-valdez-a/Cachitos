@@ -113,6 +113,9 @@ const elements = {
   modalChatMessages: document.getElementById('modalChatMessages'),
   modalChatInput: document.getElementById('modalChatInput'),
   modalChatSendBtn: document.getElementById('modalChatSendBtn'),
+  howToPlayBtn: document.getElementById('howToPlayBtn'),
+  howToPlayModal: document.getElementById('howToPlayModal'),
+  closeHowToPlayModal: document.getElementById('closeHowToPlayModal'),
   
   // Game over screen
   winnerDisplay: document.getElementById('winnerDisplay'),
@@ -1070,6 +1073,11 @@ elements.closeLogModal.addEventListener('click', closeActionLog);
 elements.logModal.addEventListener('click', (e) => { if (e.target === elements.logModal) closeActionLog(); });
 elements.closeChatModal.addEventListener('click', closeChatModal);
 elements.chatModal.addEventListener('click', (e) => { if (e.target === elements.chatModal) closeChatModal(); });
+elements.howToPlayBtn.addEventListener('click', () => elements.howToPlayModal.classList.remove('hidden'));
+document.getElementById('gameHowToPlayBtn').addEventListener('click', () => elements.howToPlayModal.classList.remove('hidden'));
+document.getElementById('lobbyHowToPlayBtn').addEventListener('click', () => elements.howToPlayModal.classList.remove('hidden'));
+elements.closeHowToPlayModal.addEventListener('click', () => elements.howToPlayModal.classList.add('hidden'));
+elements.howToPlayModal.addEventListener('click', (e) => { if (e.target === elements.howToPlayModal) elements.howToPlayModal.classList.add('hidden'); });
 elements.modalChatSendBtn.addEventListener('click', sendModalChatMessage);
 elements.modalChatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendModalChatMessage(); });
 document.querySelectorAll('.modal-chat-emoji').forEach(btn => btn.addEventListener('click', () => sendModalQuickEmoji(btn.dataset.emoji)));

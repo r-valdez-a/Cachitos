@@ -44,6 +44,7 @@
       </div>
       
       <div id="joinError" class="error-message"></div>
+      <button id="howToPlayBtn" class="btn btn-secondary how-to-play-btn">❓ How to Play</button>
     </div>
 
     <!-- Lobby Screen -->
@@ -73,6 +74,8 @@
         <h2>👁️ Spectator Bench (<span id="spectatorCount">0</span>)</h2>
         <ul id="lobbySpectatorList"></ul>
       </div>
+
+      <button id="lobbyHowToPlayBtn" class="btn btn-secondary how-to-play-btn">❓ How to Play</button>
 
       <!-- Lobby Chat -->
       <div class="lobby-chat">
@@ -125,6 +128,7 @@
               <button id="logBtn" class="btn btn-small btn-secondary hidden-desktop">📜 Log</button>
               <button id="chatBtn" class="btn btn-small btn-secondary hidden-desktop">💬 Chat</button>
               <button id="probChartBtn" class="btn btn-small btn-info">📊 Odds</button>
+              <button id="gameHowToPlayBtn" class="btn btn-small btn-secondary">❓</button>
               <button id="stopGameBtn" class="btn btn-small btn-danger hidden">⏹ Stop</button>
             </div>
             <div class="dice-info">Total: <span id="totalDice">0</span></div>
@@ -348,6 +352,65 @@
 
     <!-- Action Cue Overlay -->
     <div id="actionCue" class="action-cue hidden"></div>
+
+    <!-- How to Play Modal -->
+    <div id="howToPlayModal" class="modal hidden">
+      <div class="modal-content modal-how-to-play">
+        <div class="modal-header">
+          <h2>📖 How to Play</h2>
+          <button id="closeHowToPlayModal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="rules-content">
+            <p><strong>Cachitos</strong> is a Peruvian dice bluffing game. Lie, deduce, and survive!</p>
+
+            <h3>🎲 Setup</h3>
+            <ul>
+              <li>Each player starts with <strong>5 dice</strong>, rolled secretly each round.</li>
+              <li><strong>1s are wild</strong> — they count as any value.</li>
+            </ul>
+
+            <h3>🔄 On Your Turn</h3>
+            <p>You must do one of three things:</p>
+            <ol>
+              <li><strong>Raise</strong> — Bet a higher quantity or value of dice across ALL players' hands<br><span class="rules-example">e.g. "four 3s" → "five 3s" or "four 4s"</span></li>
+              <li><strong>Dudo (Doubt)</strong> — Challenge the last bet. All dice are revealed:
+                <ul>
+                  <li>Bet was <strong>wrong</strong> → the bettor loses a die</li>
+                  <li>Bet was <strong>right</strong> → you lose a die</li>
+                </ul>
+              </li>
+              <li><strong>Calzo (Exact)</strong> — Claim the bet is exactly right. All dice are revealed:
+                <ul>
+                  <li>If <strong>exact</strong> → you gain a die back (max 5)</li>
+                  <li>If <strong>wrong</strong> → you lose a die</li>
+                </ul>
+              </li>
+            </ol>
+
+            <h3>⚔️ Special Rules</h3>
+
+            <h4>🎨 Painting</h4>
+            <p>On your turn, you can reveal some of your dice to everyone (only 1s or dice matching your bet value). Your remaining unrevealed dice are <strong>rerolled</strong>, giving you a chance to improve your hand. You can only paint once per round.</p>
+
+            <h4>🔒 Palo Fijo</h4>
+            <p>The first time a player drops to 1 die and starts a round:</p>
+            <ul>
+              <li>1s are <strong>not wild</strong> for that round</li>
+              <li>Players with more than 1 die play <strong>blind</strong> (can't see their own dice)</li>
+              <li>The first bet locks the value for the entire round</li>
+              <li>This only triggers <strong>once per player</strong></li>
+            </ul>
+
+            <h4>⚔️ 1v1 Duel</h4>
+            <p>When only 2 players remain, Calzo still works but you <strong>don't gain</strong> a die back.</p>
+
+            <h3>💀 Elimination</h3>
+            <p>Lose all your dice and you're out. Last player standing wins! 🏆</p>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Error Toast -->
     <div id="errorToast" class="toast hidden"></div>

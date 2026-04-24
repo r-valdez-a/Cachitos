@@ -198,11 +198,21 @@ def handle_disconnect():
     if result['success']:
         player = result['player']
         print(f"Player disconnected: {player.name}")
-        broadcast_game_state_to_all()
-        socketio.emit('playerLeft', {
-            'player': player.get_public_info(),
-            'playerCount': len(game.players)
-        })
+        
+        if result.get('game_stopped'):
+            print("No humans left — game auto-stopped")
+            broadcast_game_state_to_all()
+            socketio.emit('gameStopped', {})
+        else:
+            broadcast_game_state_to_all()
+            socketio.emit('playerLeft', {
+                'player': player.get_public_info(),
+                'playerCount': len(game.players)
+            })
+            
+            # If turn advanced to a bot, schedule its turn
+            if result.get('turn_advanced'):
+                schedule_bot_turn()
 
 
 @socketio.on('join')

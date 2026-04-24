@@ -109,10 +109,13 @@ class Game:
         if not player:
             return {'success': False}
 
+        result = {'success': True, 'player': player, 'turn_advanced': False, 'game_stopped': False}
+
         # Check if spectator
         if player.is_spectator:
             self.spectators = [p for p in self.spectators if p.id != player_id]
-            return {'success': True, 'player': player}
+            self._ensure_host()
+            return result
 
         if self.state == GameState.WAITING:
             # Remove completely if game hasn't started
@@ -120,17 +123,38 @@ class Game:
             if player_id in self.bots:
                 del self.bots[player_id]
         else:
-            # Mark as disconnected if game in progress
+            # Check if it was this player's turn before eliminating
+            was_current_turn = (
+                self.state == GameState.BETTING and
+                self.get_current_player() and
+                self.get_current_player().id == player_id
+            )
+
+            # Mark as disconnected and eliminate
             player.is_connected = False
-            player.dice_count = 0  # Eliminate from game
+            player.dice_count = 0
+
+            # Check if no humans are left (players or spectators)
+            if not self._has_connected_humans():
+                self._auto_stop()
+                result['game_stopped'] = True
+                self._ensure_host()
+                return result
+
+            # Check if game should end (1 or 0 alive players)
+            if self.check_game_over():
+                self._ensure_host()
+                return result
+
+            # If it was the disconnected player's turn, advance to next player
+            if was_current_turn:
+                self.next_turn()
+                result['turn_advanced'] = True
 
         # Transfer host if needed
         self._ensure_host()
 
-        # Check if game should end
-        self.check_game_over()
-
-        return {'success': True, 'player': player}
+        return result
 
     def reconnect_player(self, old_id: str, new_id: str) -> dict:
         """Reconnect a player with new socket ID"""
@@ -264,17 +288,53 @@ class Game:
 
     def _ensure_host(self):
         """Ensure there's a valid host. Transfer if current host left."""
-        # Check if current host is still in players
+        # Check if current host is still in players or spectators
         if self.host_id:
             for p in self.players:
-                if p.id == self.host_id and not p.is_bot:
-                    return  # Host still present
-        # Transfer to first non-bot player
+                if p.id == self.host_id and not p.is_bot and p.is_connected:
+                    return  # Host still present as player
+            for p in self.spectators:
+                if p.id == self.host_id and p.is_connected:
+                    return  # Host still present as spectator
+        # Transfer to first connected non-bot player
         for p in self.players:
             if not p.is_bot and p.is_connected:
                 self.host_id = p.id
                 return
+        # Then try spectators
+        for p in self.spectators:
+            if p.is_connected:
+                self.host_id = p.id
+                return
         self.host_id = None
+
+    def _has_connected_humans(self) -> bool:
+        """Check if any non-bot human is still connected (player or spectator)"""
+        for p in self.players:
+            if not p.is_bot and p.is_connected:
+                return True
+        for p in self.spectators:
+            if p.is_connected:
+                return True
+        return False
+
+    def _auto_stop(self):
+        """Auto-stop the game when no humans are connected"""
+        self.state = GameState.WAITING
+        self.current_player_index = 0
+        self.current_bet = None
+        self.previous_bettor_index = None
+        self.round_number = 0
+        self.last_action = None
+        self.revealed_dice = None
+        self.round_starter_index = 0
+        self.is_palo_fijo = False
+        self.palo_fijo_value = None
+        self.palo_fijo_player = None
+        self.action_log = []
+        self.round_bet_history = []
+        for player in self.players:
+            player.reset_for_new_game()
 
     def transfer_host(self, host_id: str, target_id: str) -> dict:
         """Transfer host to another player (host only)"""

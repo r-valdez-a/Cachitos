@@ -114,7 +114,8 @@ class BotPlayer:
         
         prob_info = calculate_bet_probability_known(
             total_dice, known_dice,
-            current_bet['count'], current_bet['value']
+            current_bet['count'], current_bet['value'],
+            is_palo_fijo=is_palo_fijo
         )
         prob_at_least = prob_info['at_least']
         
@@ -165,7 +166,8 @@ class BotPlayer:
             my_dice, total_dice, current_bet,
             is_palo_fijo, palo_fijo_value,
             is_one_vs_one, inferred_opponent_dice,
-            known_dice
+            known_dice,
+            is_palo_fijo
         )
     
     def _infer_opponent_dice(
@@ -261,7 +263,8 @@ class BotPlayer:
         palo_fijo_value: int,
         is_one_vs_one: bool,
         inferred_opponent_dice: Dict[int, int],
-        known_dice: List[int]
+        known_dice: List[int],
+        palo_fijo_flag: bool = False
     ) -> Dict:
         """Make a raised bet"""
         current_count = current_bet['count']
@@ -272,7 +275,8 @@ class BotPlayer:
             new_count = current_count + 1
             if new_count <= total_dice:
                 prob = calculate_bet_probability_known(
-                    total_dice, known_dice, new_count, current_value
+                    total_dice, known_dice, new_count, current_value,
+                    is_palo_fijo=True
                 )
                 if prob['at_least'] > 0.2 or (is_one_vs_one and prob['at_least'] > 0.15):
                     return {
@@ -301,7 +305,8 @@ class BotPlayer:
         new_count = current_count + 1
         if new_count <= total_dice:
             prob = calculate_bet_probability_known(
-                total_dice, known_dice, new_count, current_value
+                total_dice, known_dice, new_count, current_value,
+                is_palo_fijo=palo_fijo_flag
             )
             if prob['at_least'] > best_prob:
                 best_prob = prob['at_least']
@@ -310,7 +315,8 @@ class BotPlayer:
         # Option 2: Higher value, same count
         for value in range(current_value + 1, 7):
             prob = calculate_bet_probability_known(
-                total_dice, known_dice, current_count, value
+                total_dice, known_dice, current_count, value,
+                is_palo_fijo=palo_fijo_flag
             )
             if prob['at_least'] > best_prob:
                 best_prob = prob['at_least']
@@ -321,30 +327,33 @@ class BotPlayer:
             new_count = current_count + 1
             if new_count <= total_dice:
                 prob = calculate_bet_probability_known(
-                    total_dice, known_dice, new_count, value
+                    total_dice, known_dice, new_count, value,
+                    is_palo_fijo=palo_fijo_flag
                 )
                 if prob['at_least'] > best_prob:
                     best_prob = prob['at_least']
                     best_option = {'count': new_count, 'value': value}
         
-        # Option 4: Go to 1s
-        if current_value != 1:
+        # Option 4: Go to 1s (not available during Palo Fijo)
+        if current_value != 1 and not palo_fijo_flag:
             min_ones = (current_count // 2) + 1
             if min_ones <= total_dice:
                 prob = calculate_bet_probability_known(
-                    total_dice, known_dice, min_ones, 1
+                    total_dice, known_dice, min_ones, 1,
+                    is_palo_fijo=palo_fijo_flag
                 )
                 if prob['at_least'] > best_prob:
                     best_prob = prob['at_least']
                     best_option = {'count': min_ones, 'value': 1}
         
-        # Option 5: Go from 1s
-        if current_value == 1:
+        # Option 5: Go from 1s (not available during Palo Fijo)
+        if current_value == 1 and not palo_fijo_flag:
             min_count = (current_count * 2) + 1
             for value in range(2, 7):
                 if min_count <= total_dice:
                     prob = calculate_bet_probability_known(
-                        total_dice, known_dice, min_count, value
+                        total_dice, known_dice, min_count, value,
+                        is_palo_fijo=palo_fijo_flag
                     )
                     if prob['at_least'] > best_prob:
                         best_prob = prob['at_least']

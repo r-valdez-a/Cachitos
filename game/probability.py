@@ -37,12 +37,15 @@ def exact_probability(n: int, k: int, p: float) -> float:
     return comb(n, k) * (p ** k) * ((1 - p) ** (n - k))
 
 
-def get_die_probability(value: int) -> float:
+def get_die_probability(value: int, is_palo_fijo: bool = False) -> float:
     """
     Get probability of rolling a specific value (including wild 1s)
     - For values 2-6: probability = 2/6 (the value OR a 1)
     - For value 1: probability = 1/6 (only 1s count)
+    - During Palo Fijo: 1s are NOT wild, so always 1/6
     """
+    if is_palo_fijo:
+        return 1/6  # No wilds during Palo Fijo
     if value == 1:
         return 1/6  # Only 1s
     else:
@@ -52,7 +55,8 @@ def get_die_probability(value: int) -> float:
 def calculate_bet_probability_unknown(
     total_dice: int,
     bet_count: int,
-    bet_value: int
+    bet_value: int,
+    is_palo_fijo: bool = False
 ) -> Dict[str, float]:
     """
     Calculate probability of a bet without knowing any dice (opponent's view)
@@ -61,11 +65,12 @@ def calculate_bet_probability_unknown(
         total_dice: Total dice in play
         bet_count: Number of dice bet
         bet_value: Value bet (1-6)
+        is_palo_fijo: If True, 1s are not wild (1/6 for all values)
     
     Returns:
         Dict with 'at_least' and 'exact' probabilities
     """
-    p = get_die_probability(bet_value)
+    p = get_die_probability(bet_value, is_palo_fijo)
     
     return {
         'at_least': binomial_probability(total_dice, bet_count, p),
@@ -77,7 +82,8 @@ def calculate_bet_probability_known(
     total_dice: int,
     my_dice: List[int],
     bet_count: int,
-    bet_value: int
+    bet_value: int,
+    is_palo_fijo: bool = False
 ) -> Dict[str, float]:
     """
     Calculate probability knowing your own dice (player's view)
@@ -87,6 +93,7 @@ def calculate_bet_probability_known(
         my_dice: List of your dice values
         bet_count: Number of dice bet
         bet_value: Value bet (1-6)
+        is_palo_fijo: If True, 1s are not wild (1/6 for all values)
     
     Returns:
         Dict with 'at_least', 'exact', and 'known_count' info
@@ -96,8 +103,8 @@ def calculate_bet_probability_known(
     for die in my_dice:
         if die == bet_value:
             known_count += 1
-        elif die == 1 and bet_value != 1:
-            # Wild 1s count for non-1 values
+        elif die == 1 and bet_value != 1 and not is_palo_fijo:
+            # Wild 1s count for non-1 values (NOT during Palo Fijo)
             known_count += 1
     
     # Unknown dice are total minus my dice count
@@ -106,11 +113,13 @@ def calculate_bet_probability_known(
     # I need (bet_count - known_count) more from unknown dice
     needed = bet_count - known_count
     
+    p = get_die_probability(bet_value, is_palo_fijo)
+    
     if needed <= 0:
         # I already have enough!
         return {
             'at_least': 1.0,
-            'exact': exact_probability(unknown_dice, 0, get_die_probability(bet_value)) if needed == 0 else 0.0,
+            'exact': exact_probability(unknown_dice, 0, p) if needed == 0 else 0.0,
             'known_count': known_count,
             'needed': 0
         }
@@ -123,8 +132,6 @@ def calculate_bet_probability_known(
             'known_count': known_count,
             'needed': needed
         }
-    
-    p = get_die_probability(bet_value)
     
     return {
         'at_least': binomial_probability(unknown_dice, needed, p),

@@ -1026,7 +1026,7 @@ function selectDiceValue(value) {
     b.classList.remove('selected');
     if (parseInt(b.dataset.value) === value) b.classList.add('selected');
   });
-  if (gameState && gameState.canPaint) updatePaintControls(gameState);
+  if (paintMode && gameState && gameState.canPaint) updatePaintControls(gameState);
 }
 
 function selectEmoji(emoji) {
@@ -1139,6 +1139,11 @@ function detectAndShowActionCue(state) {
   const actionId = JSON.stringify(action);
   if (actionId === lastActionCueId) return;
   lastActionCueId = actionId;
+  
+  // Skip cue animations for bot actions (they fire too fast and look glitchy)
+  const actorName = action.player || action.doubter || action.caller || '';
+  const actorIsBot = (state.players || []).some(p => p.name === actorName && p.isBot);
+  if (actorIsBot) return;
   
   if (action.type === 'bet') {
     if (action.painted && action.painted.length > 0) {

@@ -16,6 +16,8 @@ let selectedPaintDice = [];
 let paintMode = false; // Whether paint selection is visible
 let sidebarMinimized = false;
 let chatHistory = [];
+let pendingRerollAnimation = false; // Set true after we emit a paint+reroll bet
+let isRolling = false; // True while the dice-roll animation is in progress
 
 // DOM Elements
 const screens = {
@@ -124,6 +126,89 @@ const elements = {
   // Error toast
   errorToast: document.getElementById('errorToast')
 };
+
+// ============================================
+// Sounds
+// ============================================
+
+// NOTE: Flask is configured with static_url_path='' (server.py), so files in
+// static/ are served from the root. Use '/sounds/foo.mp3', NOT '/static/sounds/foo.mp3'.
+const SOUNDS = {
+  roll:  '/sounds/roll.mp3',
+  // Add more as you drop files in static/sounds/:
+  // bet:   '/sounds/bet.mp3',
+  // doubt: '/sounds/doubt.mp3',
+  // calzo: '/sounds/calzo.mp3',
+  // win:   '/sounds/win.mp3',
+};
+
+const audioCache = {};
+
+function playSound(name) {
+  const url = SOUNDS[name];
+  if (!url) return;
+  try {
+    let audio = audioCache[name];
+    if (!audio) {
+      audio = new Audio(url);
+      audio.volume = 0.6;
+      audio.addEventListener('error', (e) => console.warn(`Audio load failed for '${name}' (${url}):`, e));
+      audioCache[name] = audio;
+    }
+    audio.currentTime = 0;
+    const p = audio.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(err => console.warn(`Audio play failed for '${name}':`, err));
+    }
+  } catch (e) {
+    console.warn(`playSound('${name}') threw:`, e);
+  }
+}
+
+// ============================================
+// Dice Roll Animation
+// ============================================
+
+function setDieFace(dieEl, value) {
+  dieEl.classList.toggle('wild', value === 1);
+  dieEl.innerHTML = getDotPatternHTML(value);
+}
+
+function triggerDiceRoll() {
+  const dice = elements.myDice.querySelectorAll('.die');
+  if (dice.length === 0) return;
+
+  isRolling = true;
+
+  dice.forEach((die, i) => {
+    die.classList.remove('rolling');
+    void die.offsetWidth; // force reflow so animation restarts
+    die.style.animationDelay = `${i * 60}ms`;
+    die.classList.add('rolling');
+  });
+
+  playSound('roll');
+
+  // Flip dice to random faces during the roll, so they look like they're tumbling
+  const flipInterval = setInterval(() => {
+    dice.forEach(die => {
+      setDieFace(die, 1 + Math.floor(Math.random() * 6));
+    });
+  }, 75);
+
+  const totalMs = 550 + dice.length * 60 + 50;
+  setTimeout(() => {
+    clearInterval(flipInterval);
+    const finalValues = (gameState && Array.isArray(gameState.myDice)) ? gameState.myDice : [];
+    dice.forEach((die, i) => {
+      die.classList.remove('rolling');
+      die.style.animationDelay = '';
+      const finalValue = finalValues[i];
+      if (finalValue !== undefined) setDieFace(die, finalValue);
+    });
+    isRolling = false;
+  }, totalMs);
+}
 
 // ============================================
 // Dice Rendering (CSS dots)
@@ -439,6 +524,11 @@ function updateGameScreen(state) {
   }
   
   updateMyDice(state.myDice, state.diceHidden, state.myDiceCount);
+
+  if (pendingRerollAnimation && !state.diceHidden && state.myDice && state.myDice.length > 0) {
+    pendingRerollAnimation = false;
+    setTimeout(triggerDiceRoll, 0);
+  }
   
   // Spectators can't take actions
   if (state.isSpectator) {
@@ -639,8 +729,12 @@ function updatePlayersDisplay(state) {
 }
 
 function updateMyDice(dice, diceHidden, diceCount) {
+  // Don't rebuild the dice container mid-roll, or we'll interrupt the animation
+  // (other players' actions arrive as gameState updates while ours is still rolling).
+  if (isRolling) return;
+
   elements.myDice.innerHTML = '';
-  
+
   if (diceHidden) {
     const hiddenMsg = document.createElement('div');
     hiddenMsg.className = 'dice-hidden-message';
@@ -966,10 +1060,19 @@ socket.on('playerJoined', (data) => console.log(`${data.player.name} joined`));
 socket.on('playerLeft', (data) => console.log(`${data.player.name} left`));
 socket.on('botAdded', (data) => console.log(`Bot added: ${data.player.name}`));
 socket.on('botRemoved', (data) => console.log(`Bot removed: ${data.player.name}`));
-socket.on('gameStarted', () => console.log('Game started!'));
+socket.on('gameStarted', () => {
+  console.log('Game started!');
+  // Wait one tick so updateMyDice has rendered the new dice into the DOM
+  setTimeout(triggerDiceRoll, 0);
+});
 socket.on('gameStopped', () => { console.log('Game stopped'); showScreen('lobby'); });
 socket.on('roundResolved', (result) => console.log('Round resolved:', result));
-socket.on('newRound', (data) => { console.log('New round:', data.roundNumber); selectedPaintDice = []; paintMode = false; });
+socket.on('newRound', (data) => {
+  console.log('New round:', data.roundNumber);
+  selectedPaintDice = [];
+  paintMode = false;
+  setTimeout(triggerDiceRoll, 0);
+});
 socket.on('gameReset', () => { console.log('Game reset'); showScreen('lobby'); });
 socket.on('chatMessage', (message) => appendChatMessage(message));
 
@@ -1002,6 +1105,7 @@ function placeBet() {
   const value = selectedBetValue;
   if (isNaN(count) || count < 1) { showError('Invalid bet count'); return; }
   const paintIndices = selectedPaintDice.length > 0 ? selectedPaintDice : null;
+  if (paintIndices) pendingRerollAnimation = true;
   socket.emit('bet', { count, value, paintIndices });
   selectedPaintDice = [];
   paintMode = false;

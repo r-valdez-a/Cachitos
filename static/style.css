@@ -1946,3 +1946,23 @@ h3 {
   font-size: 0.85rem;
   font-style: italic;
 }
+
+/* ============================================
+   Dice Roll Animation
+   ============================================ */
+
+.die.rolling {
+  animation: diceRoll 550ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  transform-origin: center;
+  will-change: transform;
+}
+
+@keyframes diceRoll {
+  0%   { transform: translateY(0)    rotate(0deg)   scale(1); }
+  15%  { transform: translateY(-14px) rotate(-25deg) scale(1.05); }
+  30%  { transform: translateY(0)    rotate(15deg)  scale(0.98); }
+  45%  { transform: translateY(-9px)  rotate(-10deg) scale(1.03); }
+  60%  { transform: translateY(0)    rotate(6deg)   scale(0.99); }
+  75%  { transform: translateY(-3px)  rotate(-3deg)  scale(1.01); }
+  100% { transform: translateY(0)    rotate(0deg)   scale(1); }
+}

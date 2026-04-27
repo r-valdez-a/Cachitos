@@ -7,26 +7,29 @@ import time
 import threading
 from flask import Flask, send_from_directory, request, jsonify
 from flask_socketio import SocketIO, emit
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from game.game import Game
 from game.probability import generate_probability_table, get_quick_probabilities
+
+import json
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Firebase credentials and initialization
+cred_path = os.environ.get('FIREBASE_CREDENTIALS', 'firebase-credentials.json')
+cred = credentials.Certificate(cred_path)
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cachitos-secret-key')
 
-# Try eventlet for production, fall back to threading for local dev
-try:
-    import eventlet
-    eventlet.monkey_patch()
-    async_mode = 'eventlet'
-except (ImportError, Exception):
-    async_mode = 'threading'
-
-print(f'Using async mode: {async_mode}')
-
 # Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Single game instance
 game = Game()
@@ -152,6 +155,15 @@ def ping():
     """Keep-alive endpoint to prevent Render free tier from sleeping"""
     return 'pong'
 
+@app.route('/api/test')
+def test_db():
+    try:
+        doc_ref = db.collection('test').document('connection-check')
+        doc_ref.set({'status': 'ok', 'timestamp': firestore.SERVER_TIMESTAMP})
+        doc = doc_ref.get()
+        return jsonify({'success': True, 'data': doc.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/probability')
 def get_probability_table():

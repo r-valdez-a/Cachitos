@@ -16,7 +16,7 @@ from game.probability import generate_probability_table, get_quick_probabilities
 
 import json
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth as fb_auth
 
 # Firebase credentials and initialization
 cred_path = os.environ.get('FIREBASE_CREDENTIALS', 'firebase-credentials.json')
@@ -33,6 +33,9 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Single game instance
 game = Game()
+
+# Maps socket session ID → Firebase UID for authenticated players
+sid_to_uid = {}
 
 # Bot turn delay (seconds) - makes bot actions visible
 BOT_TURN_DELAY = 1.5
@@ -205,6 +208,7 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle disconnection"""
+    sid_to_uid.pop(request.sid, None)
     result = game.remove_player(request.sid)
     
     if result['success']:
@@ -232,6 +236,20 @@ def handle_join(data):
     """Handle player joining the game (as player or spectator)"""
     name = data.get('name', '')
     emoji = data.get('emoji', None)
+    token = data.get('token')
+
+    if token:
+        try:
+            decoded = fb_auth.verify_id_token(token)
+            uid = decoded['uid']
+            sid_to_uid[request.sid] = uid
+            email = decoded.get('email')
+            db.collection('users').document(email).set({
+                'email': decoded.get('email'),
+                'lastSeen': firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+        except Exception as e:
+            print(f"Token verification failed for {request.sid}: {e}")
     
     # Check if already in game (player or spectator)
     existing = game.get_player(request.sid)
@@ -341,6 +359,23 @@ def handle_shuffle_players():
         broadcast_game_state_to_all()
     else:
         emit('error', {'message': result['error']})
+
+
+@socketio.on('saveUserProfile')
+def handle_save_user_profile(data):
+    token = data.get('token')
+    if not token:
+        return
+    try:
+        decoded = fb_auth.verify_id_token(token)
+        uid = decoded['uid']
+        db.collection('users').document(data.get('email')).set({
+            'username': data.get('username', ''),
+            'createdAt': firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        print(f"Saved profile for {uid}: {data.get('username')}")
+    except Exception as e:
+        print(f"saveUserProfile failed: {e}")
 
 
 @socketio.on('startGame')

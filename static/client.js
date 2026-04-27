@@ -2,6 +2,27 @@
  * Cachitos Game Client
  */
 
+// ============================================
+// Firebase Auth
+// ============================================
+
+// Get these values from Firebase Console → Project Settings → Your apps → Web app
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyBFs6p0qpVedXg_hn4iY0PX5B3ERxYph_M",
+  authDomain: "cachitos-db.firebaseapp.com",
+  projectId: "cachitos-db",
+  storageBucket: "cachitos-db.firebasestorage.app",
+  messagingSenderId: "560821743326",
+  appId: "1:560821743326:web:60f520796ae11bfeac9c4f",
+  measurementId: "G-FCD7SWL5CC"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+
+let currentUser = null;
+
 // Connect to server
 const socket = io();
 
@@ -21,6 +42,8 @@ let isRolling = false; // True while the dice-roll animation is in progress
 
 // DOM Elements
 const screens = {
+  login: document.getElementById('loginScreen'),
+  register: document.getElementById('registerScreen'),
   join: document.getElementById('joinScreen'),
   lobby: document.getElementById('lobbyScreen'),
   game: document.getElementById('gameScreen'),
@@ -28,7 +51,26 @@ const screens = {
 };
 
 const elements = {
+  // Login screen
+  loginEmail: document.getElementById('loginEmail'),
+  loginPassword: document.getElementById('loginPassword'),
+  emailSignInBtn: document.getElementById('emailSignInBtn'),
+  googleSignInBtn: document.getElementById('googleSignInBtn'),
+  loginError: document.getElementById('loginError'),
+  goToRegisterBtn: document.getElementById('goToRegisterBtn'),
+
+  // Register screen
+  registerName: document.getElementById('registerName'),
+  registerEmail: document.getElementById('registerEmail'),
+  registerPassword: document.getElementById('registerPassword'),
+  registerConfirm: document.getElementById('registerConfirm'),
+  registerBtn: document.getElementById('registerBtn'),
+  registerError: document.getElementById('registerError'),
+  goToLoginBtn: document.getElementById('goToLoginBtn'),
+
   // Join screen
+  signedInAs: document.getElementById('signedInAs'),
+  signOutBtn: document.getElementById('signOutBtn'),
   playerName: document.getElementById('playerName'),
   joinBtn: document.getElementById('joinBtn'),
   joinError: document.getElementById('joinError'),
@@ -1026,9 +1068,8 @@ socket.on('disconnect', () => { console.log('Disconnected'); showError('Connecti
 socket.on('gameState', (state) => {
   gameState = state;
   
-  // Don't switch screens until the player has joined (entered name/emoji)
   if (!myPlayerId) {
-    showScreen('join');
+    if (currentUser) showScreen('join');
     return;
   }
   
@@ -1088,11 +1129,71 @@ socket.on('kicked', (data) => {
 // User Actions
 // ============================================
 
-function joinGame() {
+async function joinGame() {
   const name = elements.playerName.value.trim();
   if (!name) { elements.joinError.textContent = 'Please enter your name'; return; }
-  socket.emit('join', { name, emoji: selectedEmoji });
+  let token = null;
+  if (currentUser) {
+    try { token = await currentUser.getIdToken(); } catch (e) { console.warn('Could not get auth token:', e); }
+  }
+  socket.emit('join', { name, emoji: selectedEmoji, token });
 }
+
+function signInWithEmail() {
+  const email = elements.loginEmail.value.trim();
+  const password = elements.loginPassword.value;
+  elements.loginError.textContent = '';
+  if (!email || !password) { elements.loginError.textContent = 'Enter email and password.'; return; }
+  auth.signInWithEmailAndPassword(email, password)
+    .catch(err => {
+      elements.loginError.textContent = err.code === 'auth/invalid-credential'
+        ? 'Incorrect email or password.'
+        : 'Sign-in failed. Please try again.';
+    });
+}
+
+async function registerWithEmail() {
+  const name = elements.registerName.value.trim();
+  const email = elements.registerEmail.value.trim();
+  const password = elements.registerPassword.value;
+  const confirm = elements.registerConfirm.value;
+  elements.registerError.textContent = '';
+
+  if (!name) { elements.registerError.textContent = 'Enter a display name.'; return; }
+  if (!email) { elements.registerError.textContent = 'Enter an email.'; return; }
+  if (password.length <= 6) { elements.registerError.textContent = 'Password must be at least 6 characters.'; return; }
+  if (password !== confirm) { elements.registerError.textContent = 'Passwords do not match.'; return; }
+
+  try {
+    const result = await auth.createUserWithEmailAndPassword(email, password);
+    await result.user.updateProfile({ displayName: name });
+    const token = await result.user.getIdToken();
+    socket.emit('saveUserProfile', { username: name, email, token });
+    // onAuthStateChanged already fired before updateProfile finished, so update UI manually
+    currentUser = result.user;
+    elements.signedInAs.textContent = name;
+    elements.playerName.value = name;
+    showScreen('join');
+  } catch (err) {
+    console.error('Registration error:', err.code, err.message);
+    elements.registerError.textContent =
+      err.code === 'auth/email-already-in-use' ? 'An account with this email already exists.' :
+      err.code === 'auth/invalid-email'        ? 'Invalid email address.' :
+      err.code === 'auth/weak-password'        ? 'Password must be at least 6 characters.' :
+                                                 `Registration failed (${err.code}).`;
+  }
+}
+
+function signInWithGoogle() {
+  elements.loginError.textContent = '';
+  auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+}
+
+// Handle result when page loads after Google redirect
+auth.getRedirectResult().catch((err) => {
+  if (err.code) elements.loginError.textContent = 'Google sign-in failed. Please try again.';
+  console.error('Redirect sign-in error:', err);
+});
 function startGame() { socket.emit('startGame'); }
 function stopGame() { if (confirm('Stop game? All progress lost.')) socket.emit('stopGame'); }
 function addBot() { socket.emit('addBot'); }
@@ -1153,6 +1254,27 @@ function showError(message) {
 // ============================================
 // Event Listeners
 // ============================================
+
+elements.emailSignInBtn.addEventListener('click', signInWithEmail);
+elements.loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') signInWithEmail(); });
+elements.googleSignInBtn.addEventListener('click', signInWithGoogle);
+elements.goToRegisterBtn.addEventListener('click', () => showScreen('register'));
+elements.registerBtn.addEventListener('click', registerWithEmail);
+elements.registerConfirm.addEventListener('keypress', (e) => { if (e.key === 'Enter') registerWithEmail(); });
+elements.goToLoginBtn.addEventListener('click', () => showScreen('login'));
+elements.signOutBtn.addEventListener('click', () => auth.signOut());
+
+auth.onAuthStateChanged((user) => {
+  currentUser = user;
+  if (user) {
+    elements.signedInAs.textContent = user.displayName || user.email?.split('@')[0] || 'Unknown';
+    if (!elements.playerName.value) elements.playerName.value = user.displayName || '';
+    if (!myPlayerId) showScreen('join');
+  } else {
+    myPlayerId = null;
+    showScreen('login');
+  }
+});
 
 elements.joinBtn.addEventListener('click', joinGame);
 elements.playerName.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinGame(); });
@@ -1385,7 +1507,6 @@ setInterval(() => {
   fetch('/api/ping').catch(() => {});
 }, 5 * 60 * 1000);
 
-// Initialize
-showScreen('join');
-elements.playerName.focus();
+// Initialize — auth state listener handles which screen to show
+showScreen('login');
 window.adjustBetCount = adjustBetCount;

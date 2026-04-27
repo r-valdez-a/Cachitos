@@ -1957,6 +1957,66 @@ h3 {
   will-change: transform;
 }
 
+/* Auth */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #6b7280;
+  font-size: 0.85rem;
+  margin: 4px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #374151;
+}
+
+.btn-google {
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+
+.btn-google:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.signed-in-bar {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-bottom: 1.25rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: #2563eb;
+}
+
+.auth-footer {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
 @keyframes diceRoll {
   0%   { transform: translateY(0)    rotate(0deg)   scale(1); }
   15%  { transform: translateY(-14px) rotate(-25deg) scale(1.05); }

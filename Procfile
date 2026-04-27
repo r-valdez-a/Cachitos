@@ -1,1 +1,1 @@
-web: gunicorn --worker-class eventlet -w 1 server:app
+web: gunicorn --worker-class gthread --threads 4 -w 1 server:app

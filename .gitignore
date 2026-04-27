@@ -13,6 +13,7 @@ eggs/
 # Virtual environments
 venv/
 env/
+.env
 .env/
 .venv/
 
@@ -26,6 +27,9 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Firebase credentials
+firebase-credentials.json
 
 # Misc
 *.log

@@ -27,5 +27,8 @@ env/
 .DS_Store
 Thumbs.db
 
+# Firebase credentials
+firebase-credentials.json
+
 # Misc
 *.log

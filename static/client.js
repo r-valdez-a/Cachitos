@@ -39,6 +39,7 @@ let sidebarMinimized = false;
 let chatHistory = [];
 let pendingRerollAnimation = false; // Set true after we emit a paint+reroll bet
 let isRolling = false; // True while the dice-roll animation is in progress
+let isGuest = false;
 
 // DOM Elements
 const screens = {
@@ -55,7 +56,7 @@ const elements = {
   loginEmail: document.getElementById('loginEmail'),
   loginPassword: document.getElementById('loginPassword'),
   emailSignInBtn: document.getElementById('emailSignInBtn'),
-  googleSignInBtn: document.getElementById('googleSignInBtn'),
+  guestBtn: document.getElementById('guestBtn'),
   loginError: document.getElementById('loginError'),
   goToRegisterBtn: document.getElementById('goToRegisterBtn'),
 
@@ -1184,16 +1185,12 @@ async function registerWithEmail() {
   }
 }
 
-function signInWithGoogle() {
-  elements.loginError.textContent = '';
-  auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+function continueAsGuest() {
+  isGuest = true;
+  elements.signedInAs.textContent = 'Guest';
+  elements.playerName.value = '';
+  showScreen('join');
 }
-
-// Handle result when page loads after Google redirect
-auth.getRedirectResult().catch((err) => {
-  if (err.code) elements.loginError.textContent = 'Google sign-in failed. Please try again.';
-  console.error('Redirect sign-in error:', err);
-});
 function startGame() { socket.emit('startGame'); }
 function stopGame() { if (confirm('Stop game? All progress lost.')) socket.emit('stopGame'); }
 function addBot() { socket.emit('addBot'); }
@@ -1257,20 +1254,26 @@ function showError(message) {
 
 elements.emailSignInBtn.addEventListener('click', signInWithEmail);
 elements.loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') signInWithEmail(); });
-elements.googleSignInBtn.addEventListener('click', signInWithGoogle);
+elements.guestBtn.addEventListener('click', continueAsGuest);
 elements.goToRegisterBtn.addEventListener('click', () => showScreen('register'));
 elements.registerBtn.addEventListener('click', registerWithEmail);
 elements.registerConfirm.addEventListener('keypress', (e) => { if (e.key === 'Enter') registerWithEmail(); });
 elements.goToLoginBtn.addEventListener('click', () => showScreen('login'));
-elements.signOutBtn.addEventListener('click', () => auth.signOut());
+elements.signOutBtn.addEventListener('click', () => {
+  isGuest = false;
+  myPlayerId = null;
+  if (currentUser) auth.signOut();
+  else showScreen('login');
+});
 
 auth.onAuthStateChanged((user) => {
   currentUser = user;
   if (user) {
+    isGuest = false;
     elements.signedInAs.textContent = user.displayName || user.email?.split('@')[0] || 'Unknown';
     if (!elements.playerName.value) elements.playerName.value = user.displayName || '';
     if (!myPlayerId) showScreen('join');
-  } else {
+  } else if (!isGuest) {
     myPlayerId = null;
     showScreen('login');
   }
